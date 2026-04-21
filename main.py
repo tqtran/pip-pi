@@ -106,9 +106,11 @@ def main():
     flags  = pygame.FULLSCREEN if "--fullscreen" in sys.argv else 0
     screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
     clock  = pygame.time.Clock()
+    font   = pygame.font.Font(None, 28)
 
     touch_points = []
     flash        = None
+    last_coord   = None
 
     running = True
     while running:
@@ -122,6 +124,7 @@ def main():
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 x, y = event.pos
+                last_coord = (x, y)
                 touch_points.append(TouchPoint(x, y))
                 flash = FlashEffect(quadrant_index(x, y))
 
@@ -130,6 +133,7 @@ def main():
                 # 90° CW), so remap: x = y, y = 1-x
                 x = int(event.y * WIDTH)
                 y = int((1.0 - event.x) * HEIGHT)
+                last_coord = (x, y)
                 touch_points.append(TouchPoint(x, y))
                 flash = FlashEffect(quadrant_index(x, y))
 
@@ -147,8 +151,13 @@ def main():
         # ── Draw ────────────────────────────────────────────────────────────
         draw_quadrants(screen, flash_quad, flash_on)
         draw_touch_circles(screen, touch_points)
-        pygame.draw.circle(screen, (0, 0, 0),       (0, 0),               15)  # origin marker
+        pygame.draw.circle(screen, (0, 0, 0),     (0, 0),               15)  # origin marker
         pygame.draw.circle(screen, (128, 0, 128), (WIDTH - 1, HEIGHT - 1), 15)  # far-corner marker
+        if last_coord is not None:
+            label = font.render(f"x={last_coord[0]}  y={last_coord[1]}", True, (255, 255, 255))
+            bg    = label.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+            pygame.draw.rect(screen, (0, 0, 0), bg.inflate(12, 8), border_radius=4)
+            screen.blit(label, bg)
 
         pygame.display.flip()
         clock.tick(FPS)
