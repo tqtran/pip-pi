@@ -12,7 +12,7 @@ import time
 import pygame
 
 # ── Display ───────────────────────────────────────────────────────────────────
-WIDTH, HEIGHT = 480, 320# landscape: 320×480 rotated 90°
+WIDTH, HEIGHT = 480, 320   # native panel resolution
 FPS = 30                   # conservative for Pi Zero
 
 # ── Quadrant base colours (top-left, top-right, bottom-left, bottom-right) ───
@@ -125,10 +125,8 @@ def main():
                 running = False
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                x_raw, y_raw = event.pos
-                x = int((y_raw * WIDTH) / HEIGHT)
-                y = int(HEIGHT - (x_raw * HEIGHT) / WIDTH)
-                last_coord = (x_raw, y_raw)
+                x, y = event.pos
+                last_coord = (x, y)
                 last_ev_type = "click"
                 touch_points.append(TouchPoint(x, y))
                 flash = FlashEffect(quadrant_index(x, y))
