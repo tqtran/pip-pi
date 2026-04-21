@@ -100,6 +100,7 @@ def draw_touch_circles(screen, touch_points):
 
 def main():
     pygame.init()
+    pygame.font.init()
     pygame.display.set_caption("pip-pi")
     pygame.mouse.set_visible(False)
 
@@ -156,7 +157,7 @@ def main():
         if last_coord is not None:
             label = font.render(f"x={last_coord[0]}  y={last_coord[1]}", True, (255, 255, 255))
             bg    = label.get_rect(center=(WIDTH // 2, HEIGHT // 2))
-            pygame.draw.rect(screen, (0, 0, 0), bg.inflate(12, 8), border_radius=4)
+            pygame.draw.rect(screen, (0, 0, 0), bg.inflate(12, 8))
             screen.blit(label, bg)
 
         pygame.display.flip()
