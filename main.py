@@ -131,13 +131,6 @@ def main():
                 touch_points.append(TouchPoint(x, y))
                 flash = FlashEffect(quadrant_index(x, y))
 
-            elif event.type == pygame.FINGERDOWN:
-                x, y = int(event.x), HEIGHT - int(event.y)
-                last_coord = (event.x, event.y)
-                last_ev_type = "touch"
-                touch_points.append(TouchPoint(x, y))
-                flash = FlashEffect(quadrant_index(x, y))
-
         # ── Update state ────────────────────────────────────────────────────
         touch_points = [tp for tp in touch_points if tp.alive()]
 
