@@ -1,6 +1,6 @@
 # pip-pi
 
-Wrist control panel for a Raspberry Pi Zero — 320×480 display running in landscape (480×320).
+Wrist control panel for a Raspberry Pi Zero — 720×400 display.
 
 ## Screen 1 — Touch Proof of Concept
 
@@ -39,3 +39,4 @@ python main.py --fullscreen
 ```
 
 Press **Esc** to quit.
+Tap or click the **Exit** button in the top-right corner to close the app.

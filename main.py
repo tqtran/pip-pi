@@ -3,7 +3,7 @@
 pip-pi: Wrist Control Panel for Raspberry Pi Zero
 Screen 1: Touch proof-of-concept — four coloured quadrants, touch feedback.
 
-Display target: 320×480 panel run in landscape → 480×320 pixels.
+Display target: 720×400 pixels.
 Run with --fullscreen for the Pi; omit the flag for desktop testing.
 """
 
@@ -12,8 +12,8 @@ import time
 import pygame
 
 # ── Display ───────────────────────────────────────────────────────────────────
-WIDTH, HEIGHT = 480, 320   # landscape: 320×480 rotated 90°
-FPS = 30                   # conservative for Pi Zero
+WIDTH, HEIGHT = 720, 400
+FPS = 30
 
 # ── Quadrant base colours (top-left, top-right, bottom-left, bottom-right) ───
 QUAD_COLORS = [
@@ -23,6 +23,9 @@ QUAD_COLORS = [
     (210, 175,  45),   # yellow
 ]
 FLASH_WHITE = (255, 255, 255)
+EXIT_BUTTON_BG = (35, 35, 35)
+EXIT_BUTTON_BORDER = (255, 255, 255)
+EXIT_BUTTON_TEXT = (255, 255, 255)
 
 # ── Touch / flash constants ───────────────────────────────────────────────────
 TOUCH_RADIUS   = 25    # radius = 25 px → 50 px diameter circle
@@ -42,6 +45,10 @@ def quadrant_rect(idx):
     hw, hh = WIDTH // 2, HEIGHT // 2
     col, row = idx % 2, idx // 2
     return pygame.Rect(col * hw, row * hh, hw, hh)
+
+
+def exit_button_rect():
+    return pygame.Rect(WIDTH - 100, 10, 90, 36)
 
 
 # ── Lightweight state objects ─────────────────────────────────────────────────
@@ -96,6 +103,14 @@ def draw_touch_circles(screen, touch_points):
         pygame.draw.circle(screen, (  0,   0,   0), (tp.x, tp.y), TOUCH_RADIUS, 2)
 
 
+def draw_exit_button(screen, font):
+    rect = exit_button_rect()
+    pygame.draw.rect(screen, EXIT_BUTTON_BG, rect, border_radius=8)
+    pygame.draw.rect(screen, EXIT_BUTTON_BORDER, rect, width=2, border_radius=8)
+    label = font.render("Exit", True, EXIT_BUTTON_TEXT)
+    screen.blit(label, label.get_rect(center=rect.center))
+
+
 # ── Main loop ────────────────────────────────────────────────────────────────
 
 def main():
@@ -106,6 +121,7 @@ def main():
     flags  = pygame.FULLSCREEN if "--fullscreen" in sys.argv else 0
     screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
     clock  = pygame.time.Clock()
+    font   = pygame.font.Font(None, 28)
 
     touch_points = []
     flash        = None
@@ -122,6 +138,9 @@ def main():
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 x, y = event.pos
+                if exit_button_rect().collidepoint(x, y):
+                    running = False
+                    continue
                 touch_points.append(TouchPoint(x, y))
                 flash = FlashEffect(quadrant_index(x, y))
 
@@ -129,6 +148,9 @@ def main():
                 # FINGERDOWN coordinates are 0.0–1.0 normalised
                 x = int(event.x * WIDTH)
                 y = int(event.y * HEIGHT)
+                if exit_button_rect().collidepoint(x, y):
+                    running = False
+                    continue
                 touch_points.append(TouchPoint(x, y))
                 flash = FlashEffect(quadrant_index(x, y))
 
@@ -146,6 +168,7 @@ def main():
         # ── Draw ────────────────────────────────────────────────────────────
         draw_quadrants(screen, flash_quad, flash_on)
         draw_touch_circles(screen, touch_points)
+        draw_exit_button(screen, font)
 
         pygame.display.flip()
         clock.tick(FPS)
