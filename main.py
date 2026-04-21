@@ -12,7 +12,7 @@ import time
 import pygame
 
 # ── Display ───────────────────────────────────────────────────────────────────
-WIDTH, HEIGHT = 720, 400
+WIDTH, HEIGHT = 480, 320
 FPS = 30
 
 # ── Quadrant base colours (top-left, top-right, bottom-left, bottom-right) ───
