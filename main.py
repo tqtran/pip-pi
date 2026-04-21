@@ -9,7 +9,11 @@ Run with --fullscreen for the Pi; omit the flag for desktop testing.
 
 import sys
 import time
+import os
 import pygame
+
+os.environ.setdefault("SDL_VIDEODRIVER", "fbcon")
+os.environ.setdefault("SDL_FBDEV",       "/dev/fb1")
 
 # ── Display ───────────────────────────────────────────────────────────────────
 WIDTH, HEIGHT = 480, 320   # landscape: 320×480 rotated 90°
