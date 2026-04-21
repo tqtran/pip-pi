@@ -12,7 +12,7 @@ import time
 import pygame
 
 # ── Display ───────────────────────────────────────────────────────────────────
-WIDTH, HEIGHT = 720, 480   # landscape: 320×480 rotated 90°
+WIDTH, HEIGHT = 480, 320# landscape: 320×480 rotated 90°
 FPS = 30                   # conservative for Pi Zero
 
 # ── Quadrant base colours (top-left, top-right, bottom-left, bottom-right) ───
