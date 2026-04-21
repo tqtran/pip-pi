@@ -6,7 +6,7 @@ print("after init")
 
 print("display init?", pygame.display.get_init())
 
-screen = pygame.display.set_mode((720, 480))
+screen = pygame.display.set_mode((480, 320))
 print("set_mode worked")
 
 running = True
