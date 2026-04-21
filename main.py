@@ -12,8 +12,7 @@ import time
 import os
 import pygame
 
-os.environ.setdefault("SDL_VIDEODRIVER", "fbcon")
-os.environ.setdefault("SDL_FBDEV",       "/dev/fb1")
+os.environ.setdefault("SDL_VIDEODRIVER", "kmsdrm")
 
 # ── Display ───────────────────────────────────────────────────────────────────
 WIDTH, HEIGHT = 480, 320   # landscape: 320×480 rotated 90°
