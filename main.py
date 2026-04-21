@@ -130,9 +130,8 @@ def main():
                 flash = FlashEffect(quadrant_index(x, y))
 
             elif event.type == pygame.FINGERDOWN:
-                x = int(event.y * WIDTH)
-                y = int(event.x * HEIGHT)
-                last_coord = (event.x, event.y)  # raw normalised values
+                x, y = int(event.x), int(event.y)
+                last_coord = (x, y)
                 touch_points.append(TouchPoint(x, y))
                 flash = FlashEffect(quadrant_index(x, y))
 
