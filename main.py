@@ -130,11 +130,9 @@ def main():
                 flash = FlashEffect(quadrant_index(x, y))
 
             elif event.type == pygame.FINGERDOWN:
-                # Panel reports portrait coords; display is landscape (rotated
-                # 90° CW), so remap: x = y, y = 1-x
                 x = int(event.y * WIDTH)
                 y = int(event.x * HEIGHT)
-                last_coord = (x, y)
+                last_coord = (event.x, event.y)  # raw normalised values
                 touch_points.append(TouchPoint(x, y))
                 flash = FlashEffect(quadrant_index(x, y))
 
