@@ -103,8 +103,7 @@ def draw_touch_circles(screen, touch_points):
         pygame.draw.circle(screen, (  0,   0,   0), (tp.x, tp.y), TOUCH_RADIUS, 2)
 
 
-def draw_exit_button(screen, font):
-    rect = exit_button_rect()
+def draw_exit_button(screen, font, rect):
     pygame.draw.rect(screen, EXIT_BUTTON_BG, rect, border_radius=8)
     pygame.draw.rect(screen, EXIT_BUTTON_BORDER, rect, width=2, border_radius=8)
     label = font.render("Exit", True, EXIT_BUTTON_TEXT)
@@ -122,6 +121,7 @@ def main():
     screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
     clock  = pygame.time.Clock()
     font   = pygame.font.Font(None, 28)
+    exit_rect = exit_button_rect()
 
     touch_points = []
     flash        = None
@@ -138,7 +138,7 @@ def main():
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 x, y = event.pos
-                if exit_button_rect().collidepoint(x, y):
+                if exit_rect.collidepoint(x, y):
                     running = False
                     continue
                 touch_points.append(TouchPoint(x, y))
@@ -148,7 +148,7 @@ def main():
                 # FINGERDOWN coordinates are 0.0–1.0 normalised
                 x = int(event.x * WIDTH)
                 y = int(event.y * HEIGHT)
-                if exit_button_rect().collidepoint(x, y):
+                if exit_rect.collidepoint(x, y):
                     running = False
                     continue
                 touch_points.append(TouchPoint(x, y))
@@ -168,7 +168,7 @@ def main():
         # ── Draw ────────────────────────────────────────────────────────────
         draw_quadrants(screen, flash_quad, flash_on)
         draw_touch_circles(screen, touch_points)
-        draw_exit_button(screen, font)
+        draw_exit_button(screen, font, exit_rect)
 
         pygame.display.flip()
         clock.tick(FPS)
