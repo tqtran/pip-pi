@@ -147,6 +147,8 @@ def main():
         # ── Draw ────────────────────────────────────────────────────────────
         draw_quadrants(screen, flash_quad, flash_on)
         draw_touch_circles(screen, touch_points)
+        pygame.draw.circle(screen, (0, 0, 0),       (0, 0),               15)  # origin marker
+        pygame.draw.circle(screen, (128, 0, 128), (WIDTH - 1, HEIGHT - 1), 15)  # far-corner marker
 
         pygame.display.flip()
         clock.tick(FPS)
