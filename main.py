@@ -133,7 +133,7 @@ def main():
                 # Panel reports portrait coords; display is landscape (rotated
                 # 90° CW), so remap: x = y, y = 1-x
                 x = int(event.y * WIDTH)
-                y = int((1.0 - event.x) * HEIGHT)
+                y = int(event.x * HEIGHT)
                 last_coord = (x, y)
                 touch_points.append(TouchPoint(x, y))
                 flash = FlashEffect(quadrant_index(x, y))
