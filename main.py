@@ -109,9 +109,10 @@ def main():
     clock  = pygame.time.Clock()
     font   = pygame.font.Font(None, 28)
 
-    touch_points = []
-    flash        = None
-    last_coord   = None
+    touch_points  = []
+    flash         = None
+    last_coord    = None
+    last_ev_type  = None
 
     running = True
     while running:
@@ -126,12 +127,14 @@ def main():
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 x, y = event.pos
                 last_coord = (x, y)
+                last_ev_type = "click"
                 touch_points.append(TouchPoint(x, y))
                 flash = FlashEffect(quadrant_index(x, y))
 
             elif event.type == pygame.FINGERDOWN:
                 x, y = int(event.x), HEIGHT - int(event.y)
                 last_coord = (event.x, event.y)
+                last_ev_type = "touch"
                 touch_points.append(TouchPoint(x, y))
                 flash = FlashEffect(quadrant_index(x, y))
 
@@ -156,6 +159,10 @@ def main():
             bg    = label.get_rect(center=(WIDTH // 2, HEIGHT // 2))
             pygame.draw.rect(screen, (0, 0, 0), bg.inflate(12, 8))
             screen.blit(label, bg)
+            ev_label = font.render(last_ev_type, True, (255, 255, 255))
+            ev_bg    = ev_label.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 30))
+            pygame.draw.rect(screen, (0, 0, 0), ev_bg.inflate(12, 8))
+            screen.blit(ev_label, ev_bg)
 
         pygame.display.flip()
         clock.tick(FPS)
