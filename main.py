@@ -125,8 +125,10 @@ def main():
                 running = False
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                x, y = event.pos
-                last_coord = (x, y)
+                x_raw, y_raw = event.pos
+                x = int((y_raw * WIDTH) / HEIGHT)
+                y = int(HEIGHT - (x_raw * HEIGHT) / WIDTH)
+                last_coord = (x_raw, y_raw)
                 last_ev_type = "click"
                 touch_points.append(TouchPoint(x, y))
                 flash = FlashEffect(quadrant_index(x, y))
