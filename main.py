@@ -51,6 +51,10 @@ def exit_button_rect():
     return pygame.Rect(WIDTH - 100, 10, 90, 36)
 
 
+def finger_pos(event):
+    return int(event.x * WIDTH), int(event.y * HEIGHT)
+
+
 # ── Lightweight state objects ─────────────────────────────────────────────────
 
 class TouchPoint:
@@ -125,6 +129,7 @@ def main():
 
     touch_points = []
     flash        = None
+    exit_pressed = False
 
     running = True
     while running:
@@ -139,20 +144,31 @@ def main():
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 x, y = event.pos
                 if exit_rect.collidepoint(x, y):
-                    running = False
+                    exit_pressed = True
                     continue
                 touch_points.append(TouchPoint(x, y))
                 flash = FlashEffect(quadrant_index(x, y))
 
+            elif event.type == pygame.MOUSEBUTTONUP:
+                x, y = event.pos
+                if exit_pressed and exit_rect.collidepoint(x, y):
+                    running = False
+                exit_pressed = False
+
             elif event.type == pygame.FINGERDOWN:
                 # FINGERDOWN coordinates are 0.0–1.0 normalised
-                x = int(event.x * WIDTH)
-                y = int(event.y * HEIGHT)
+                x, y = finger_pos(event)
                 if exit_rect.collidepoint(x, y):
-                    running = False
+                    exit_pressed = True
                     continue
                 touch_points.append(TouchPoint(x, y))
                 flash = FlashEffect(quadrant_index(x, y))
+
+            elif event.type == pygame.FINGERUP:
+                x, y = finger_pos(event)
+                if exit_pressed and exit_rect.collidepoint(x, y):
+                    running = False
+                exit_pressed = False
 
         # ── Update state ────────────────────────────────────────────────────
         touch_points = [tp for tp in touch_points if tp.alive()]
