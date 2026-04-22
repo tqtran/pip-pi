@@ -14,6 +14,7 @@ import subprocess
 import sys
 import time
 from array import array
+import threading
 
 import pygame
 
@@ -30,7 +31,7 @@ def S(n):
 
 FPS = 30
 RIPPLE_LIFE = 0.45
-CONFIG_PATH = "pip-pi.config.json"
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pip-pi.config.json")
 
 DEFAULT_CONFIG = {
     "scan_intervals": {
@@ -118,9 +119,9 @@ def read_text(path):
         return None
 
 
-def run_command_lines(cmd):
+def run_command_lines(cmd, timeout=2):
     try:
-        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True, timeout=2)
+        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True, timeout=timeout)
         return [line.strip() for line in out.splitlines() if line.strip()]
     except Exception:
         return []
@@ -217,9 +218,17 @@ def read_temp_c():
     return None
 
 
+def _bg_scan(target_key, read_fn, data, cache):
+    """Run a blocking scan on a background thread and write the result into data."""
+    result = read_fn()
+    data[target_key] = clamp(result, 0, 999)
+    cache[f"{target_key}_scan_done"] = time.time()
+    cache[f"{target_key}_scanning"] = False
+
+
 def read_wifi_count():
     # Force a fresh scan so the result is live, not cached.
-    lines = run_command_lines(["nmcli", "-t", "-f", "SSID", "dev", "wifi", "list", "--rescan", "yes"])
+    lines = run_command_lines(["nmcli", "-t", "-f", "SSID", "dev", "wifi", "list", "--rescan", "yes"], timeout=15)
     if not lines:
         return 0
     unique = {ln for ln in lines if ln}
@@ -675,17 +684,21 @@ def update_data(data, cache, start_time, now):
         cache["stats_refresh_at"] = now
 
     if now - cache.get("wifi_refresh_at", -scan_intervals["wifi_seconds"]) >= scan_intervals["wifi_seconds"]:
-        cache["wifi_scan_started"] = now
-        data["wifi"] = clamp(read_wifi_count(), 0, 999)
-        cache["wifi_refresh_at"] = now
+        if not cache.get("wifi_scanning", False):
+            cache["wifi_scanning"] = True
+            cache["wifi_scan_started"] = now
+            cache["wifi_refresh_at"] = now
+            threading.Thread(target=_bg_scan, args=("wifi", read_wifi_count, data, cache), daemon=True).start()
 
     if now - cache.get("ble_refresh_at", -scan_intervals["ble_seconds"]) >= scan_intervals["ble_seconds"]:
-        cache["ble_scan_started"] = now
-        data["ble"] = clamp(read_ble_count(), 0, 999)
-        cache["ble_refresh_at"] = now
+        if not cache.get("ble_scanning", False):
+            cache["ble_scanning"] = True
+            cache["ble_scan_started"] = now
+            cache["ble_refresh_at"] = now
+            threading.Thread(target=_bg_scan, args=("ble", read_ble_count, data, cache), daemon=True).start()
 
-    data["wifi_scanning"] = (now - cache.get("wifi_scan_started", -(SCAN_ANIM_SECS + 1))) < SCAN_ANIM_SECS
-    data["ble_scanning"] = (now - cache.get("ble_scan_started", -(SCAN_ANIM_SECS + 1))) < SCAN_ANIM_SECS
+    data["wifi_scanning"] = cache.get("wifi_scanning", False)
+    data["ble_scanning"] = cache.get("ble_scanning", False)
 
     uptime = read_uptime_str()
 
@@ -739,9 +752,10 @@ def main():
     # Stagger BLE scan 30s after WiFi (WiFi fires immediately at t=0).
     _wifi_secs = CONFIG["scan_intervals"]["wifi_seconds"]
     _ble_secs = CONFIG["scan_intervals"]["ble_seconds"]
+    _now = time.time()
     cache = {
-        "wifi_refresh_at": -_wifi_secs,
-        "ble_refresh_at": -_ble_secs + 30.0,
+        "wifi_refresh_at": _now - _wifi_secs,
+        "ble_refresh_at": _now - _ble_secs + 30.0,
     }
     ripples = []
 
