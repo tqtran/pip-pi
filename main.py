@@ -100,7 +100,6 @@ def draw_touch_circles(screen, touch_points):
 
 def main():
     pygame.init()
-    pygame.font.init()
     pygame.display.set_caption("pip-pi")
     pygame.mouse.set_visible(False)
 
