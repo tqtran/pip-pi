@@ -351,23 +351,36 @@ def draw_status_panel(screen, rect, fonts, data):
 
     temp_f = c_to_f(data["temp"])
     labels = [
-        ("CPU", data["cpu"], VIOLET),
-        ("MEM", data["mem"], VIOLET),
         ("STORE", data["store"], VIOLET),
         ("TEMP", temp_f, VIOLET),
     ]
-    col_w = (rect.w - 24) // 5
+    col_w = (rect.w - 24) // 3
     for i, (name, val, color) in enumerate(labels):
         x = rect.x + 12 + i * col_w
         screen.blit(text_surf(fonts["sm"], name, MUTED), (x, rect.y + 48))
         screen.blit(text_surf(fonts["stat_val"], f"{int(val)}%" if name != "TEMP" else f"{int(val)}F", color), (x, rect.y + 86))
         draw_metric_bar(screen, x, rect.y + 114, val if name != "TEMP" else ((val - 86) * 1.2), color)
-        if i < 4:
+        if i < 2:
             pygame.draw.line(screen, (36, 43, 73), (x + col_w - 8, rect.y + 38), (x + col_w - 8, rect.bottom - 16), 1)
 
-    up_x = rect.x + 12 + 4 * col_w
+    up_x = rect.x + 12 + 2 * col_w
     screen.blit(text_surf(fonts["sm"], "UPTIME", MUTED), (up_x, rect.y + 48))
     screen.blit(text_surf(fonts["stat_val"], data["uptime"], VIOLET), (up_x, rect.y + 92))
+
+
+def draw_cpu_mem_panel(screen, rect, fonts, data):
+    neon_box(screen, rect, CYAN)
+    screen.blit(text_surf(fonts["panel_title"], "SYSTEM LOAD", TEXT), (rect.x + 12, rect.y + 10))
+
+    col_w = (rect.w - 24) // 2
+    items = [("CPU", data["cpu"], CYAN), ("MEM", data["mem"], CYAN)]
+    for i, (name, val, color) in enumerate(items):
+        x = rect.x + 12 + i * col_w
+        screen.blit(text_surf(fonts["sm"], name, MUTED), (x, rect.y + 48))
+        screen.blit(text_surf(fonts["lg"], f"{int(val)}%", color), (x, rect.y + 68))
+        draw_metric_bar(screen, x, rect.y + 116, val, color)
+        if i == 0:
+            pygame.draw.line(screen, (36, 43, 73), (x + col_w - 8, rect.y + 38), (x + col_w - 8, rect.bottom - 16), 1)
 
 
 def draw_main(screen, fonts, data, selected, now):
@@ -406,15 +419,13 @@ def draw_main(screen, fonts, data, selected, now):
     draw_wire_grid(screen, wifi.inflate(-8, -10), PINK)
     screen.blit(text_surf(fonts["panel_title"], "WIFI FOUND", TEXT), (wifi.x + 18, wifi.y + 14))
     screen.blit(text_surf(fonts["wifi_num"], str(data["wifi"]), PINK), (wifi.x + 18, wifi.y + 54))
-    pygame.draw.line(screen, (90, 20, 60), (wifi.x + 210, wifi.y + 20), (wifi.x + 210, wifi.bottom - 20), 2)
-    draw_wifi_symbol(screen, wifi.right - 180, wifi.y + 64, PINK)
+    split_x = wifi.x + (wifi.w // 2)
+    pygame.draw.line(screen, (90, 20, 60), (split_x, wifi.y + 20), (split_x, wifi.bottom - 20), 2)
+    screen.blit(text_surf(fonts["panel_title"], "BLE FOUND", TEXT), (split_x + 18, wifi.y + 14))
+    screen.blit(text_surf(fonts["wifi_num"], str(data["ble"]), CYAN), (split_x + 18, wifi.y + 54))
 
-    ble = pygame.Rect(rx, 194, rw, 108)
-    neon_box(screen, ble, CYAN)
-    draw_wire_grid(screen, ble.inflate(-8, -10), CYAN)
-    screen.blit(text_surf(fonts["panel_title"], "BLE FOUND", TEXT), (ble.x + 18, ble.y + 14))
-    screen.blit(text_surf(fonts["lg"], str(data["ble"]), CYAN), (ble.x + 18, ble.y + 46))
-    draw_bluetooth_symbol(screen, ble.right - 250, ble.y + 54, CYAN)
+    cpu_mem = pygame.Rect(rx, 194, rw, 108)
+    draw_cpu_mem_panel(screen, cpu_mem, fonts, data)
 
     stats = pygame.Rect(rx, 312, rw, HEIGHT - 326)
     draw_status_panel(screen, stats, fonts, data)
