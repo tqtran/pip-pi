@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import time
+from array import array
 
 import pygame
 
@@ -28,6 +29,7 @@ PINK = (255, 14, 142)
 CYAN = (0, 197, 255)
 VIOLET = (122, 56, 255)
 RED = (255, 36, 36)
+WHITE = (255, 255, 255)
 
 
 def clamp(v, lo, hi):
@@ -183,6 +185,28 @@ def init_pygame_or_die():
         raise SystemExit(1)
 
 
+def init_click_sound():
+    """Create a short synthesized click tone. Returns None if audio is unavailable."""
+    try:
+        if pygame.mixer.get_init() is None:
+            pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=256)
+
+        sample_rate = 22050
+        duration_s = 0.05
+        freq_hz = 1400.0
+        total = int(sample_rate * duration_s)
+        pcm = array("h")
+        for i in range(total):
+            t = i / float(sample_rate)
+            envelope = 1.0 - (i / float(total))
+            sample = int(14000 * envelope * math.sin(2.0 * math.pi * freq_hz * t))
+            pcm.append(sample)
+
+        return pygame.mixer.Sound(buffer=pcm.tobytes())
+    except Exception:
+        return None
+
+
 def neon_box(screen, rect, border, fill=PANEL_BG, radius=8):
     pygame.draw.rect(screen, fill, rect, border_radius=radius)
     glow = rect.inflate(6, 6)
@@ -213,27 +237,33 @@ def draw_wire_grid(screen, rect, color):
 
 
 def draw_wifi_symbol(screen, cx, cy, color):
-    # Clean, centered WiFi glyph: three symmetric arcs plus a dot.
-    center_y = cy + 6
+    # WiFi arcs above a dot (upright orientation).
+    center_y = cy - 6
     for r, th in ((36, 5), (25, 4), (14, 4)):
         rect = pygame.Rect(cx - r, center_y - r, 2 * r, 2 * r)
-        pygame.draw.arc(screen, color, rect, math.radians(210), math.radians(330), th)
-    pygame.draw.circle(screen, color, (cx, center_y + 14), 6)
+        pygame.draw.arc(screen, color, rect, math.radians(30), math.radians(150), th)
+    pygame.draw.circle(screen, color, (cx, center_y + 18), 6)
 
 
 def draw_bluetooth_symbol(screen, cx, cy, color):
-    # Canonical Bluetooth rune shape with balanced diagonals.
+    # Canonical Bluetooth rune with both right and left whiskers.
     top = (cx, cy - 34)
     mid = (cx, cy)
     bot = (cx, cy + 34)
     up_r = (cx + 20, cy - 16)
     dn_r = (cx + 20, cy + 16)
+    up_l = (cx - 18, cy - 16)
+    dn_l = (cx - 18, cy + 16)
 
     pygame.draw.line(screen, color, top, bot, 4)
     pygame.draw.line(screen, color, top, up_r, 4)
+    pygame.draw.line(screen, color, top, up_l, 4)
     pygame.draw.line(screen, color, mid, up_r, 4)
+    pygame.draw.line(screen, color, mid, up_l, 4)
     pygame.draw.line(screen, color, mid, dn_r, 4)
+    pygame.draw.line(screen, color, mid, dn_l, 4)
     pygame.draw.line(screen, color, bot, dn_r, 4)
+    pygame.draw.line(screen, color, bot, dn_l, 4)
 
 
 def draw_capture_symbol(screen, cx, cy, color):
@@ -305,12 +335,11 @@ def draw_ripples(screen, ripples, now):
         p = age / RIPPLE_LIFE
         alpha = int(180 * (1.0 - p))
         base_r = 10 + int(58 * p)
-        color = rp["color"]
         for k in range(3):
             r = base_r + k * 14
             a = max(0, alpha - k * 35)
             if a > 0:
-                pygame.draw.circle(overlay, (color[0], color[1], color[2], a), (rp["x"], rp["y"]), r, 2)
+                pygame.draw.circle(overlay, (WHITE[0], WHITE[1], WHITE[2], a), (rp["x"], rp["y"]), r, 2)
 
     screen.blit(overlay, (0, 0))
 
@@ -449,6 +478,7 @@ def main():
     clock = pygame.time.Clock()
 
     fonts = make_fonts()
+    click_sound = init_click_sound()
     selected = 0
     start = time.time()
     last_data = -DATA_REFRESH_SECONDS
@@ -479,8 +509,9 @@ def main():
                     selected = (selected - 1) % 5
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = event.pos
-                ripple_color = CYAN if mx > WIDTH // 2 else PINK
-                ripples.append({"x": mx, "y": my, "born": time.time(), "color": ripple_color})
+                ripples.append({"x": mx, "y": my, "born": time.time()})
+                if click_sound is not None:
+                    click_sound.play()
                 if 14 <= mx <= 184:
                     tile_h = 78
                     start_y = 54
