@@ -1,7 +1,8 @@
 import os
 import pygame
 
-os.environ.setdefault("SDL_VIDEODRIVER", "kmsdrm")
+os.environ.setdefault("SDL_VIDEODRIVER", "fbcon")
+os.environ.setdefault("SDL_FBDEV",       "/dev/fb1")
 
 pygame.init()
 screen = pygame.display.set_mode((480, 320), pygame.FULLSCREEN)
