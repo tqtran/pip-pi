@@ -18,7 +18,7 @@ import pygame
 
 WIDTH, HEIGHT = 720, 480
 FPS = 30
-DATA_REFRESH_SECONDS = 60.0
+DATA_REFRESH_SECONDS = 5.0
 RIPPLE_LIFE = 0.45
 
 BG = (4, 6, 16)
@@ -75,15 +75,31 @@ def read_cpu_percent(cache):
         return cache.get("cpu", 0)
 
     prev = cache.get("cpu_prev")
-    cache["cpu_prev"] = snap
     if prev is None:
-        return cache.get("cpu", 0)
+        # First sample: take a short second snapshot to compute a real percentage.
+        time.sleep(0.08)
+        snap2 = parse_cpu_snapshot()
+        if snap2 is None:
+            cache["cpu_prev"] = snap
+            return cache.get("cpu", 0)
+        total_delta = snap2[0] - snap[0]
+        idle_delta = snap2[1] - snap[1]
+        cache["cpu_prev"] = snap2
+        if total_delta <= 0:
+            return cache.get("cpu", 0)
+        cpu = clamp(int(100.0 * (1.0 - (idle_delta / float(total_delta)))), 0, 100)
+        cache["cpu"] = cpu
+        return cpu
+
+    cache["cpu_prev"] = snap
 
     total_delta = snap[0] - prev[0]
     idle_delta = snap[1] - prev[1]
     if total_delta <= 0:
         return cache.get("cpu", 0)
-    return clamp(int(100.0 * (1.0 - (idle_delta / float(total_delta)))), 0, 100)
+    cpu = clamp(int(100.0 * (1.0 - (idle_delta / float(total_delta)))), 0, 100)
+    cache["cpu"] = cpu
+    return cpu
 
 
 def read_mem_percent():
@@ -306,7 +322,7 @@ def draw_bottom_pulse_strip(screen, t):
     gap = 2
     seg_w = (strip.w - (segs - 1) * gap) // segs
     cycle = (segs - 1) * 2
-    phase = (t * 18.0) % cycle
+    phase = (t * 9.0) % cycle
     head = phase if phase <= (segs - 1) else (cycle - phase)
 
     for i in range(segs):
@@ -377,8 +393,8 @@ def draw_cpu_mem_panel(screen, rect, fonts, data):
     for i, (name, val, color) in enumerate(items):
         x = rect.x + 12 + i * col_w
         screen.blit(text_surf(fonts["sm"], name, MUTED), (x, rect.y + 48))
-        screen.blit(text_surf(fonts["lg"], f"{int(val)}%", color), (x, rect.y + 68))
-        draw_metric_bar(screen, x, rect.y + 116, val, color)
+        screen.blit(text_surf(fonts["stat_val"], f"{int(val)}%", color), (x + 70, rect.y + 46))
+        draw_metric_bar(screen, x, rect.y + 90, val, color)
         if i == 0:
             pygame.draw.line(screen, (36, 43, 73), (x + col_w - 8, rect.y + 38), (x + col_w - 8, rect.bottom - 16), 1)
 
