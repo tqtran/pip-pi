@@ -1,7 +1,7 @@
 import os
 import pygame
 
-os.environ.setdefault("SDL_VIDEODRIVER", "fbcon")
+os.environ.setdefault("SDL_VIDEODRIVER", "fbdev")
 os.environ.setdefault("SDL_FBDEV",       "/dev/fb1")
 
 pygame.init()
