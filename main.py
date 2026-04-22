@@ -44,8 +44,6 @@ DEFAULT_CONFIG = {
     },
 }
 
-SCAN_ANIM_SECS = 3.0  # seconds to display scanning indicator after each scan
-
 
 def clone_default_config():
     return {
@@ -220,9 +218,10 @@ def read_temp_c():
 
 def _bg_scan(target_key, read_fn, data, cache):
     """Run a blocking scan on a background thread and write the result into data."""
+    t0 = time.time()
     result = read_fn()
+    print(f"[scan] {target_key}: {result} ({time.time() - t0:.1f}s)")
     data[target_key] = clamp(result, 0, 999)
-    cache[f"{target_key}_scan_done"] = time.time()
     cache[f"{target_key}_scanning"] = False
 
 
@@ -230,6 +229,7 @@ def read_wifi_count():
     # Force a fresh scan so the result is live, not cached.
     lines = run_command_lines(["nmcli", "-t", "-f", "SSID", "dev", "wifi", "list", "--rescan", "yes"], timeout=15)
     if not lines:
+        print("[scan] wifi: nmcli returned no output")
         return 0
     unique = {ln for ln in lines if ln}
     return len(unique)
@@ -239,6 +239,7 @@ def read_ble_count():
     # Best effort: known bluetooth devices count from bluetoothctl.
     lines = run_command_lines(["bluetoothctl", "devices"])
     if not lines:
+        print("[scan] ble: bluetoothctl returned no output")
         return 0
     return len(lines)
 
@@ -630,6 +631,27 @@ def draw_main(screen, fonts, data, selected, current_view, light_on, now):
         screen.blit(text_surf(fonts["panel_title"], "BLE FOUND", TEXT), (split_x + S(18), wifi.y + S(14)))
         screen.blit(text_surf(fonts["wifi_num"], str(data["ble"]), CYAN), (split_x + S(18), wifi.y + S(54)))
 
+    # Countdown bars — shrink from full to empty over the scan interval.
+    bar_h = max(2, S(4))
+    bar_y = wifi.bottom - bar_h - S(3)
+    bar_margin = S(6)
+    wifi_interval = CONFIG["scan_intervals"]["wifi_seconds"]
+    ble_interval = CONFIG["scan_intervals"]["ble_seconds"]
+    half_w = split_x - wifi.x - bar_margin * 2
+    if wifi_scanning:
+        pygame.draw.rect(screen, BG, (wifi.x + bar_margin, bar_y, half_w, bar_h), border_radius=2)
+    else:
+        frac = max(0.0, 1.0 - (now - data["wifi_refresh_at"]) / wifi_interval)
+        pygame.draw.rect(screen, scale_color(PINK, 0.5), (wifi.x + bar_margin, bar_y, half_w, bar_h), border_radius=2)
+        pygame.draw.rect(screen, PINK, (wifi.x + bar_margin, bar_y, int(half_w * frac), bar_h), border_radius=2)
+    half_w2 = wifi.right - split_x - bar_margin * 2
+    if ble_scanning:
+        pygame.draw.rect(screen, BG, (split_x + bar_margin, bar_y, half_w2, bar_h), border_radius=2)
+    else:
+        frac = max(0.0, 1.0 - (now - data["ble_refresh_at"]) / ble_interval)
+        pygame.draw.rect(screen, scale_color(CYAN, 0.5), (split_x + bar_margin, bar_y, half_w2, bar_h), border_radius=2)
+        pygame.draw.rect(screen, CYAN, (split_x + bar_margin, bar_y, int(half_w2 * frac), bar_h), border_radius=2)
+
     cpu_mem = pygame.Rect(rx, wifi.bottom + panel_gap, rw, S(108))
     draw_cpu_mem_panel(screen, cpu_mem, fonts, data, now)
     draw_scanline_shimmer(screen, cpu_mem, now + 0.6)
@@ -699,6 +721,8 @@ def update_data(data, cache, start_time, now):
 
     data["wifi_scanning"] = cache.get("wifi_scanning", False)
     data["ble_scanning"] = cache.get("ble_scanning", False)
+    data["wifi_refresh_at"] = cache.get("wifi_refresh_at", now)
+    data["ble_refresh_at"] = cache.get("ble_refresh_at", now)
 
     uptime = read_uptime_str()
 
