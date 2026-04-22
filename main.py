@@ -213,17 +213,27 @@ def draw_wire_grid(screen, rect, color):
 
 
 def draw_wifi_symbol(screen, cx, cy, color):
-    for r, th in ((34, 6), (23, 5), (12, 4)):
-        pygame.draw.arc(screen, color, (cx - r, cy - r, 2 * r, 2 * r), math.radians(205), math.radians(335), th)
-    pygame.draw.circle(screen, color, (cx, cy + 12), 6)
+    # Clean, centered WiFi glyph: three symmetric arcs plus a dot.
+    center_y = cy + 6
+    for r, th in ((36, 5), (25, 4), (14, 4)):
+        rect = pygame.Rect(cx - r, center_y - r, 2 * r, 2 * r)
+        pygame.draw.arc(screen, color, rect, math.radians(210), math.radians(330), th)
+    pygame.draw.circle(screen, color, (cx, center_y + 14), 6)
 
 
 def draw_bluetooth_symbol(screen, cx, cy, color):
-    pygame.draw.line(screen, color, (cx, cy - 34), (cx, cy + 34), 4)
-    pygame.draw.line(screen, color, (cx, cy - 34), (cx + 22, cy - 10), 4)
-    pygame.draw.line(screen, color, (cx, cy + 34), (cx + 22, cy + 10), 4)
-    pygame.draw.line(screen, color, (cx, cy), (cx + 22, cy - 10), 4)
-    pygame.draw.line(screen, color, (cx, cy), (cx + 22, cy + 10), 4)
+    # Canonical Bluetooth rune shape with balanced diagonals.
+    top = (cx, cy - 34)
+    mid = (cx, cy)
+    bot = (cx, cy + 34)
+    up_r = (cx + 20, cy - 16)
+    dn_r = (cx + 20, cy + 16)
+
+    pygame.draw.line(screen, color, top, bot, 4)
+    pygame.draw.line(screen, color, top, up_r, 4)
+    pygame.draw.line(screen, color, mid, up_r, 4)
+    pygame.draw.line(screen, color, mid, dn_r, 4)
+    pygame.draw.line(screen, color, bot, dn_r, 4)
 
 
 def draw_capture_symbol(screen, cx, cy, color):
