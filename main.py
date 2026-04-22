@@ -83,7 +83,7 @@ def draw_wire_grid(screen, rect, color):
 
 def draw_wifi_symbol(screen, cx, cy, color):
     for r, th in ((52, 11), (34, 9), (18, 7)):
-        pygame.draw.arc(screen, color, (cx - r, cy - r, 2 * r, 2 * r), math.radians(215), math.radians(325), th)
+        pygame.draw.arc(screen, color, (cx - r, cy - r, 2 * r, 2 * r), math.radians(35), math.radians(145), th)
     pygame.draw.circle(screen, color, (cx, cy), 10)
 
 
@@ -100,6 +100,10 @@ def draw_bottom_pulse_strip(screen, t):
     segs = 40
     gap = 2
     seg_w = (strip.w - (segs - 1) * gap) // segs
+    cycle = (segs - 1) * 2
+    phase = (t * 18.0) % cycle
+    head = phase if phase <= (segs - 1) else (cycle - phase)
+
     for i in range(segs):
         f = i / max(1, segs - 1)
         base = (
@@ -107,8 +111,14 @@ def draw_bottom_pulse_strip(screen, t):
             int(PINK[1] * (1.0 - f) + CYAN[1] * f),
             int(PINK[2] * (1.0 - f) + CYAN[2] * f),
         )
-        pulse = 0.62 + 0.38 * (0.5 + 0.5 * math.sin(t * 4.2 + i * 0.45))
-        c = (int(base[0] * pulse), int(base[1] * pulse), int(base[2] * pulse))
+        dist = abs(i - head)
+        glow = max(0.12, 1.0 - dist / 7.0)
+        boost = 0.55 + 0.85 * glow
+        c = (
+            clamp(int(base[0] * boost), 0, 255),
+            clamp(int(base[1] * boost), 0, 255),
+            clamp(int(base[2] * boost), 0, 255),
+        )
         x = strip.x + i * (seg_w + gap)
         pygame.draw.rect(screen, c, (x, strip.y, seg_w, strip.h), border_radius=2)
 
@@ -138,7 +148,7 @@ def draw_ripples(screen, ripples, now):
 
 def draw_status_panel(screen, rect, fonts, data):
     neon_box(screen, rect, VIOLET)
-    title = text_surf(fonts["md"], "SYSTEM STATS", TEXT)
+    title = text_surf(fonts["panel_title"], "SYSTEM STATS", TEXT)
     screen.blit(title, (rect.x + 12, rect.y + 10))
 
     labels = [
@@ -151,14 +161,14 @@ def draw_status_panel(screen, rect, fonts, data):
     for i, (name, val, color) in enumerate(labels):
         x = rect.x + 12 + i * col_w
         screen.blit(text_surf(fonts["sm"], name, MUTED), (x, rect.y + 48))
-        screen.blit(text_surf(fonts["lg"], f"{int(val)}%" if name != "TEMP" else f"{int(val)}C", color), (x, rect.y + 74))
+        screen.blit(text_surf(fonts["stat_val"], f"{int(val)}%" if name != "TEMP" else f"{int(val)}C", color), (x, rect.y + 86))
         draw_metric_bar(screen, x, rect.y + 114, val if name != "TEMP" else (val - 30) * 2, color)
         if i < 4:
             pygame.draw.line(screen, (36, 43, 73), (x + col_w - 8, rect.y + 38), (x + col_w - 8, rect.bottom - 16), 1)
 
     up_x = rect.x + 12 + 4 * col_w
     screen.blit(text_surf(fonts["sm"], "UPTIME", MUTED), (up_x, rect.y + 48))
-    screen.blit(text_surf(fonts["lg"], data["uptime"], VIOLET), (up_x, rect.y + 82))
+    screen.blit(text_surf(fonts["stat_val"], data["uptime"], VIOLET), (up_x, rect.y + 92))
 
 
 def draw_main(screen, fonts, data, selected, now):
@@ -170,11 +180,13 @@ def draw_main(screen, fonts, data, selected, now):
     # Top bar
     top = pygame.Rect(14, 14, WIDTH - 28, 34)
     pygame.draw.line(screen, (20, 35, 60), (top.x, top.bottom), (top.right, top.bottom), 1)
-    screen.blit(text_surf(fonts["md"], "KAGE // LVL 27", PINK), (top.x + 10, top.y + 4))
-    live = text_surf(fonts["md"], "LIVE INTEL", PINK)
-    screen.blit(live, (WIDTH // 2 - live.get_width() // 2, top.y + 4))
-    screen.blit(text_surf(fonts["md"], data["clock"], PINK), (top.right - 128, top.y + 4))
-    screen.blit(text_surf(fonts["md"], f"{data['battery']}%", CYAN), (top.right - 54, top.y + 4))
+    screen.blit(text_surf(fonts["top"], "KAGE // LVL 27", PINK), (top.x + 10, top.y + 8))
+    live = text_surf(fonts["top"], "LIVE INTEL", PINK)
+    screen.blit(live, (WIDTH // 2 - live.get_width() // 2, top.y + 8))
+    clock_text = text_surf(fonts["top"], data["clock"], PINK)
+    battery_text = text_surf(fonts["top"], f"{data['battery']}%", CYAN)
+    screen.blit(clock_text, (top.right - 122, top.y + 8))
+    screen.blit(battery_text, (top.right - 16 - battery_text.get_width(), top.y + 8))
 
     # Left menu
     left = pygame.Rect(14, 54, 170, HEIGHT - 68)
@@ -186,7 +198,7 @@ def draw_main(screen, fonts, data, selected, now):
         col = menu_colors[i]
         fill = (20, 8, 28) if i == selected else (5, 8, 20)
         neon_box(screen, r, col, fill=fill)
-        screen.blit(text_surf(fonts["md"], name, TEXT), (r.x + 18, r.y + 25))
+        screen.blit(text_surf(fonts["menu"], name, TEXT), (r.x + 18, r.y + 28))
 
     # Right content
     rx = left.right + 10
@@ -195,15 +207,15 @@ def draw_main(screen, fonts, data, selected, now):
     wifi = pygame.Rect(rx, 54, rw, 130)
     neon_box(screen, wifi, PINK)
     draw_wire_grid(screen, wifi.inflate(-8, -10), PINK)
-    screen.blit(text_surf(fonts["md"], "WIFI FOUND", TEXT), (wifi.x + 18, wifi.y + 14))
-    screen.blit(text_surf(fonts["xl"], str(data["wifi"]), PINK), (wifi.x + 18, wifi.y + 44))
+    screen.blit(text_surf(fonts["panel_title"], "WIFI FOUND", TEXT), (wifi.x + 18, wifi.y + 14))
+    screen.blit(text_surf(fonts["wifi_num"], str(data["wifi"]), PINK), (wifi.x + 18, wifi.y + 54))
     pygame.draw.line(screen, (90, 20, 60), (wifi.x + 210, wifi.y + 20), (wifi.x + 210, wifi.bottom - 20), 2)
     draw_wifi_symbol(screen, wifi.right - 180, wifi.y + 77, PINK)
 
     ble = pygame.Rect(rx, 194, rw, 108)
     neon_box(screen, ble, CYAN)
     draw_wire_grid(screen, ble.inflate(-8, -10), CYAN)
-    screen.blit(text_surf(fonts["md"], "BLE FOUND", TEXT), (ble.x + 18, ble.y + 14))
+    screen.blit(text_surf(fonts["panel_title"], "BLE FOUND", TEXT), (ble.x + 18, ble.y + 14))
     screen.blit(text_surf(fonts["lg"], str(data["ble"]), CYAN), (ble.x + 18, ble.y + 46))
     draw_bluetooth_symbol(screen, ble.right - 250, ble.y + 54, CYAN)
 
@@ -217,9 +229,12 @@ def make_fonts():
     # Fall back to defaults automatically; this still requires pygame font support.
     return {
         "sm": pygame.font.SysFont("dejavusansmono", 20, bold=True),
-        "md": pygame.font.SysFont("dejavusansmono", 34, bold=True),
+        "top": pygame.font.SysFont("dejavusansmono", 17, bold=True),
+        "menu": pygame.font.SysFont("dejavusansmono", 27, bold=True),
+        "panel_title": pygame.font.SysFont("dejavusansmono", 26, bold=True),
         "lg": pygame.font.SysFont("dejavusansmono", 54, bold=True),
-        "xl": pygame.font.SysFont("dejavusansmono", 104, bold=True),
+        "stat_val": pygame.font.SysFont("dejavusansmono", 27, bold=True),
+        "wifi_num": pygame.font.SysFont("dejavusansmono", 52, bold=True),
     }
 
 
