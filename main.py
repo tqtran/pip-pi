@@ -634,6 +634,7 @@ def main():
                             if i == 4:
                                 light_on = not light_on
                             else:
+                                light_on = False
                                 selected = i
                                 if i == 2:
                                     current_view = "home"
