@@ -1,178 +1,287 @@
 #!/usr/bin/env python3
 """
-pip-pi: Wrist Control Panel for Raspberry Pi Zero
-Screen 1: Touch proof-of-concept — four coloured quadrants, touch feedback.
+pip-pi dashboard prototype.
 
-Display target: 320×480 panel run in landscape → 480×320 pixels.
-Run with --fullscreen for the Pi.
-Tap the top-centre toggle to switch between fullscreen and windowed mode.
+Reference-inspired neon layout using rectangles, lines, and text only.
+No image assets required.
 """
 
+import math
+import random
 import sys
 import time
+
 import pygame
 
-# ── Display ───────────────────────────────────────────────────────────────────
-WIDTH, HEIGHT = 720, 480   # landscape: 320×480 rotated 90°
-FPS = 30                   # conservative for Pi Zero
+WIDTH, HEIGHT = 720, 480
+FPS = 30
+DATA_HZ = 4.0
+RIPPLE_LIFE = 0.45
 
-# ── Quadrant base colours (top-left, top-right, bottom-left, bottom-right) ───
-QUAD_COLORS = [
-    (210,  65,  65),   # red
-    ( 65, 130, 210),   # blue
-    ( 55, 170,  85),   # green
-    (210, 175,  45),   # yellow
-]
-FLASH_WHITE = (255, 255, 255)
-
-# ── Touch / flash constants ───────────────────────────────────────────────────
-TOUCH_RADIUS   = 25    # radius = 25 px → 50 px diameter circle
-TOUCH_LIFETIME = 2.0   # seconds the circle stays on screen
-FLASH_INTERVAL = 0.10  # seconds per flash half-cycle
-FLASH_CYCLES   = 5     # half-cycles (flash on → off → on …)
-TOGGLE_W, TOGGLE_H = 72, 22
+BG = (4, 6, 16)
+PANEL_BG = (8, 10, 24)
+TEXT = (224, 230, 238)
+MUTED = (116, 136, 158)
+PINK = (255, 14, 142)
+CYAN = (0, 197, 255)
+VIOLET = (122, 56, 255)
 
 
-def taskbar_toggle_rect():
-    """Small top-centre hit target to toggle fullscreen/windowed mode."""
-    return pygame.Rect((WIDTH - TOGGLE_W) // 2, 6, TOGGLE_W, TOGGLE_H)
+def clamp(v, lo, hi):
+    return max(lo, min(hi, v))
 
 
-def quadrant_index(x, y):
-    """Return 0-3 for which quadrant the point falls in."""
-    col = 1 if x >= WIDTH  // 2 else 0
-    row = 1 if y >= HEIGHT // 2 else 0
-    return row * 2 + col
+def neon_box(screen, rect, border, fill=PANEL_BG, radius=8):
+    pygame.draw.rect(screen, fill, rect, border_radius=radius)
+    glow = rect.inflate(6, 6)
+    pygame.draw.rect(screen, (border[0] // 4, border[1] // 4, border[2] // 4), glow, 1, border_radius=radius + 2)
+    pygame.draw.rect(screen, border, rect, 2, border_radius=radius)
 
 
-def quadrant_rect(idx):
-    hw, hh = WIDTH // 2, HEIGHT // 2
-    col, row = idx % 2, idx // 2
-    return pygame.Rect(col * hw, row * hh, hw, hh)
+def text_surf(font, s, color=TEXT):
+    return font.render(s, True, color)
 
 
-# ── Lightweight state objects ─────────────────────────────────────────────────
-
-class TouchPoint:
-    __slots__ = ("x", "y", "born")
-
-    def __init__(self, x, y):
-        self.x, self.y = x, y
-        self.born = time.monotonic()
-
-    def alive(self):
-        return (time.monotonic() - self.born) < TOUCH_LIFETIME
+def draw_metric_bar(screen, x, y, value, color):
+    blocks = 8
+    on = int(round(clamp(value, 0, 100) / 100 * blocks))
+    w, h, gap = 10, 12, 2
+    for i in range(blocks):
+        c = color if i < on else (28, 34, 62)
+        pygame.draw.rect(screen, c, (x + i * (w + gap), y, w, h), border_radius=2)
 
 
-class FlashEffect:
-    """Quadrant flash animation triggered by a single touch."""
-
-    def __init__(self, quad_idx):
-        self.quad_idx = quad_idx
-        self.start    = time.monotonic()
-        self._done    = False
-
-    def update(self):
-        """Return (active, flash_on).  Call once per frame."""
-        if self._done:
-            return False, False
-        elapsed = time.monotonic() - self.start
-        cycle   = int(elapsed / FLASH_INTERVAL)
-        if cycle >= FLASH_CYCLES:
-            self._done = True
-            return False, False
-        return True, (cycle % 2 == 0)  # even cycles → white
+def draw_wire_grid(screen, rect, color):
+    for i in range(1, 8):
+        yy = rect.y + int(i * rect.h / 8)
+        pygame.draw.line(screen, (color[0] // 5, color[1] // 5, color[2] // 5), (rect.x + 6, yy), (rect.right - 6, yy), 1)
+    for i in range(1, 10):
+        xx = rect.x + int(i * rect.w / 10)
+        pygame.draw.line(screen, (color[0] // 6, color[1] // 6, color[2] // 6), (xx, rect.y + 6), (xx, rect.bottom - 6), 1)
 
 
-# ── Rendering ────────────────────────────────────────────────────────────────
-
-def draw_quadrants(screen, flash_quad, flash_on):
-    for idx in range(4):
-        rect  = quadrant_rect(idx)
-        color = FLASH_WHITE if (idx == flash_quad and flash_on) else QUAD_COLORS[idx]
-        pygame.draw.rect(screen, color, rect)
-    # subtle divider lines
-    mid_x, mid_y = WIDTH // 2, HEIGHT // 2
-    pygame.draw.line(screen, (0, 0, 0), (mid_x, 0),     (mid_x, HEIGHT), 1)
-    pygame.draw.line(screen, (0, 0, 0), (0,     mid_y), (WIDTH,  mid_y), 1)
+def draw_wifi_symbol(screen, cx, cy, color):
+    for r, th in ((52, 11), (34, 9), (18, 7)):
+        pygame.draw.arc(screen, color, (cx - r, cy - r, 2 * r, 2 * r), math.radians(215), math.radians(325), th)
+    pygame.draw.circle(screen, color, (cx, cy), 10)
 
 
-def draw_touch_circles(screen, touch_points):
-    for tp in touch_points:
-        pygame.draw.circle(screen, (255, 255, 255), (tp.x, tp.y), TOUCH_RADIUS)
-        pygame.draw.circle(screen, (  0,   0,   0), (tp.x, tp.y), TOUCH_RADIUS, 2)
+def draw_bluetooth_symbol(screen, cx, cy, color):
+    pygame.draw.line(screen, color, (cx, cy - 44), (cx, cy + 44), 5)
+    pygame.draw.line(screen, color, (cx, cy - 44), (cx + 28, cy - 14), 5)
+    pygame.draw.line(screen, color, (cx, cy + 44), (cx + 28, cy + 14), 5)
+    pygame.draw.line(screen, color, (cx - 2, cy), (cx + 28, cy - 14), 5)
+    pygame.draw.line(screen, color, (cx - 2, cy), (cx + 28, cy + 14), 5)
 
 
-def draw_taskbar_toggle(screen, is_fullscreen):
-    rect = taskbar_toggle_rect()
-    pygame.draw.rect(screen, (0, 0, 0), rect, border_radius=8)
-    pygame.draw.rect(screen, (255, 255, 255), rect, 2, border_radius=8)
+def draw_bottom_pulse_strip(screen, t):
+    strip = pygame.Rect(14, HEIGHT - 22, WIDTH - 28, 14)
+    segs = 40
+    gap = 2
+    seg_w = (strip.w - (segs - 1) * gap) // segs
+    for i in range(segs):
+        f = i / max(1, segs - 1)
+        base = (
+            int(PINK[0] * (1.0 - f) + CYAN[0] * f),
+            int(PINK[1] * (1.0 - f) + CYAN[1] * f),
+            int(PINK[2] * (1.0 - f) + CYAN[2] * f),
+        )
+        pulse = 0.62 + 0.38 * (0.5 + 0.5 * math.sin(t * 4.2 + i * 0.45))
+        c = (int(base[0] * pulse), int(base[1] * pulse), int(base[2] * pulse))
+        x = strip.x + i * (seg_w + gap)
+        pygame.draw.rect(screen, c, (x, strip.y, seg_w, strip.h), border_radius=2)
 
-    cx = rect.centerx
-    cy = rect.centery
-    if is_fullscreen:
-        # Fullscreen currently on: show an "up" chevron hint to reveal taskbar.
-        pts = [(cx - 10, cy + 4), (cx, cy - 4), (cx + 10, cy + 4)]
-    else:
-        # Windowed currently on: show a "down" chevron hint to return fullscreen.
-        pts = [(cx - 10, cy - 4), (cx, cy + 4), (cx + 10, cy - 4)]
-    pygame.draw.lines(screen, (255, 255, 255), False, pts, 3)
+
+def draw_ripples(screen, ripples, now):
+    if not ripples:
+        return
+
+    overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    for rp in ripples:
+        age = now - rp["born"]
+        if age >= RIPPLE_LIFE:
+            continue
+
+        p = age / RIPPLE_LIFE
+        alpha = int(180 * (1.0 - p))
+        base_r = 10 + int(58 * p)
+        color = rp["color"]
+        for k in range(3):
+            r = base_r + k * 14
+            a = max(0, alpha - k * 35)
+            if a > 0:
+                pygame.draw.circle(overlay, (color[0], color[1], color[2], a), (rp["x"], rp["y"]), r, 2)
+
+    screen.blit(overlay, (0, 0))
 
 
-# ── Main loop ────────────────────────────────────────────────────────────────
+def draw_status_panel(screen, rect, fonts, data):
+    neon_box(screen, rect, VIOLET)
+    title = text_surf(fonts["md"], "SYSTEM STATS", TEXT)
+    screen.blit(title, (rect.x + 12, rect.y + 10))
+
+    labels = [
+        ("CPU", data["cpu"], VIOLET),
+        ("MEM", data["mem"], VIOLET),
+        ("STORE", data["store"], VIOLET),
+        ("TEMP", data["temp"], VIOLET),
+    ]
+    col_w = (rect.w - 24) // 5
+    for i, (name, val, color) in enumerate(labels):
+        x = rect.x + 12 + i * col_w
+        screen.blit(text_surf(fonts["sm"], name, MUTED), (x, rect.y + 48))
+        screen.blit(text_surf(fonts["lg"], f"{int(val)}%" if name != "TEMP" else f"{int(val)}C", color), (x, rect.y + 74))
+        draw_metric_bar(screen, x, rect.y + 114, val if name != "TEMP" else (val - 30) * 2, color)
+        if i < 4:
+            pygame.draw.line(screen, (36, 43, 73), (x + col_w - 8, rect.y + 38), (x + col_w - 8, rect.bottom - 16), 1)
+
+    up_x = rect.x + 12 + 4 * col_w
+    screen.blit(text_surf(fonts["sm"], "UPTIME", MUTED), (up_x, rect.y + 48))
+    screen.blit(text_surf(fonts["lg"], data["uptime"], VIOLET), (up_x, rect.y + 82))
+
+
+def draw_main(screen, fonts, data, selected, now):
+    screen.fill(BG)
+
+    outer = pygame.Rect(6, 6, WIDTH - 12, HEIGHT - 12)
+    neon_box(screen, outer, (24, 94, 120), fill=(2, 4, 12), radius=10)
+
+    # Top bar
+    top = pygame.Rect(14, 14, WIDTH - 28, 34)
+    pygame.draw.line(screen, (20, 35, 60), (top.x, top.bottom), (top.right, top.bottom), 1)
+    screen.blit(text_surf(fonts["md"], "KAGE // LVL 27", PINK), (top.x + 10, top.y + 4))
+    live = text_surf(fonts["md"], "LIVE INTEL", PINK)
+    screen.blit(live, (WIDTH // 2 - live.get_width() // 2, top.y + 4))
+    screen.blit(text_surf(fonts["md"], data["clock"], PINK), (top.right - 128, top.y + 4))
+    screen.blit(text_surf(fonts["md"], f"{data['battery']}%", CYAN), (top.right - 54, top.y + 4))
+
+    # Left menu
+    left = pygame.Rect(14, 54, 170, HEIGHT - 68)
+    menu_items = ["WIFI", "BLUETOOTH", "CAPTURE", "SYSTEM", "LOGS"]
+    menu_colors = [PINK, CYAN, VIOLET, VIOLET, CYAN]
+    tile_h = 78
+    for i, name in enumerate(menu_items):
+        r = pygame.Rect(left.x, left.y + i * (tile_h + 8), left.w, tile_h)
+        col = menu_colors[i]
+        fill = (20, 8, 28) if i == selected else (5, 8, 20)
+        neon_box(screen, r, col, fill=fill)
+        screen.blit(text_surf(fonts["md"], name, TEXT), (r.x + 18, r.y + 25))
+
+    # Right content
+    rx = left.right + 10
+    rw = WIDTH - rx - 14
+
+    wifi = pygame.Rect(rx, 54, rw, 130)
+    neon_box(screen, wifi, PINK)
+    draw_wire_grid(screen, wifi.inflate(-8, -10), PINK)
+    screen.blit(text_surf(fonts["md"], "WIFI FOUND", TEXT), (wifi.x + 18, wifi.y + 14))
+    screen.blit(text_surf(fonts["xl"], str(data["wifi"]), PINK), (wifi.x + 18, wifi.y + 44))
+    pygame.draw.line(screen, (90, 20, 60), (wifi.x + 210, wifi.y + 20), (wifi.x + 210, wifi.bottom - 20), 2)
+    draw_wifi_symbol(screen, wifi.right - 180, wifi.y + 77, PINK)
+
+    ble = pygame.Rect(rx, 194, rw, 108)
+    neon_box(screen, ble, CYAN)
+    draw_wire_grid(screen, ble.inflate(-8, -10), CYAN)
+    screen.blit(text_surf(fonts["md"], "BLE FOUND", TEXT), (ble.x + 18, ble.y + 14))
+    screen.blit(text_surf(fonts["lg"], str(data["ble"]), CYAN), (ble.x + 18, ble.y + 46))
+    draw_bluetooth_symbol(screen, ble.right - 250, ble.y + 54, CYAN)
+
+    stats = pygame.Rect(rx, 312, rw, HEIGHT - 326)
+    draw_status_panel(screen, stats, fonts, data)
+
+    draw_bottom_pulse_strip(screen, now)
+
+
+def make_fonts():
+    # Fall back to defaults automatically; this still requires pygame font support.
+    return {
+        "sm": pygame.font.SysFont("dejavusansmono", 20, bold=True),
+        "md": pygame.font.SysFont("dejavusansmono", 34, bold=True),
+        "lg": pygame.font.SysFont("dejavusansmono", 54, bold=True),
+        "xl": pygame.font.SysFont("dejavusansmono", 104, bold=True),
+    }
+
+
+def update_data(data, start_time):
+    t = time.time()
+    phase = t * 0.8
+    data["wifi"] = clamp(int(12 + 2 * math.sin(phase) + random.choice([0, 0, 1, -1])), 8, 16)
+    data["ble"] = clamp(int(7 + 1 * math.sin(phase * 1.6) + random.choice([0, 0, 1, -1])), 3, 11)
+    data["cpu"] = clamp(int(42 + 18 * abs(math.sin(phase * 1.2))), 10, 95)
+    data["mem"] = clamp(int(56 + 8 * abs(math.sin(phase * 0.7 + 0.9))), 20, 95)
+    data["store"] = clamp(int(45 + 2 * abs(math.sin(phase * 0.2))), 30, 85)
+    data["temp"] = clamp(int(56 + 10 * abs(math.sin(phase * 1.4 + 0.3))), 38, 85)
+    data["battery"] = clamp(int(87 - ((time.time() - start_time) / 120.0)), 20, 100)
+    data["clock"] = time.strftime("%H:%M")
+    elapsed = int(time.time() - start_time)
+    hh = elapsed // 3600
+    mm = (elapsed % 3600) // 60
+    ss = elapsed % 60
+    data["uptime"] = f"{hh:01d}:{mm:02d}:{ss:02d}"
+
 
 def main():
     pygame.init()
-    pygame.display.set_caption("pip-pi")
+    pygame.font.init()
+    pygame.display.set_caption("pip-pi live intel")
     pygame.mouse.set_visible(False)
 
-    args = set(sys.argv[1:])
-    is_fullscreen = "--fullscreen" in args
-    flags = pygame.FULLSCREEN if is_fullscreen else 0
+    flags = pygame.FULLSCREEN if "--fullscreen" in set(sys.argv[1:]) else 0
     screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
-    clock  = pygame.time.Clock()
+    clock = pygame.time.Clock()
 
-    touch_points  = []
-    flash         = None
+    fonts = make_fonts()
+    selected = 0
+    start = time.time()
+    last_data = 0.0
+    data = {
+        "wifi": 12,
+        "ble": 7,
+        "cpu": 45,
+        "mem": 61,
+        "store": 45,
+        "temp": 62,
+        "battery": 87,
+        "clock": "00:00",
+        "uptime": "0:00:00",
+    }
+    ripples = []
 
     running = True
     while running:
-        # ── Events ──────────────────────────────────────────────────────────
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-
-            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                running = False
-
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                elif event.key == pygame.K_DOWN:
+                    selected = (selected + 1) % 5
+                elif event.key == pygame.K_UP:
+                    selected = (selected - 1) % 5
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                x, y = event.pos
-                if taskbar_toggle_rect().collidepoint(x, y):
-                    is_fullscreen = not is_fullscreen
-                    flags = pygame.FULLSCREEN if is_fullscreen else 0
-                    screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
-                    continue
-                touch_points.append(TouchPoint(x, y))
-                flash = FlashEffect(quadrant_index(x, y))
+                mx, my = event.pos
+                ripple_color = CYAN if mx > WIDTH // 2 else PINK
+                ripples.append({"x": mx, "y": my, "born": time.time(), "color": ripple_color})
+                if 14 <= mx <= 184:
+                    tile_h = 78
+                    start_y = 54
+                    for i in range(5):
+                        y = start_y + i * (tile_h + 8)
+                        if y <= my <= y + tile_h:
+                            selected = i
+                            break
 
-        # ── Update state ────────────────────────────────────────────────────
-        touch_points = [tp for tp in touch_points if tp.alive()]
+        now = time.time()
+        if now - last_data >= 1.0 / DATA_HZ:
+            update_data(data, start)
+            last_data = now
 
-        flash_quad, flash_on = -1, False
-        if flash is not None:
-            active, flash_on = flash.update()
-            if active:
-                flash_quad = flash.quad_idx
-            else:
-                flash = None
+        draw_main(screen, fonts, data, selected, now)
+        draw_ripples(screen, ripples, now)
 
-        # ── Draw ────────────────────────────────────────────────────────────
-        draw_quadrants(screen, flash_quad, flash_on)
-        draw_touch_circles(screen, touch_points)
-        draw_taskbar_toggle(screen, is_fullscreen)
-        pygame.draw.circle(screen, (0, 0, 0),     (0, 0),               15)  # origin marker
-        pygame.draw.circle(screen, (128, 0, 128), (WIDTH - 1, HEIGHT - 1), 15)  # far-corner marker
-
+        # Keep only active ripple effects.
+        ripples = [rp for rp in ripples if (now - rp["born"]) < RIPPLE_LIFE]
         pygame.display.flip()
         clock.tick(FPS)
 
