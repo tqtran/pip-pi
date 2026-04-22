@@ -5,7 +5,7 @@ Screen 1: Touch proof-of-concept — four coloured quadrants, touch feedback.
 
 Display target: 320×480 panel run in landscape → 480×320 pixels.
 Run with --fullscreen for the Pi.
-Use --noframe for borderless windowed mode on desktop.
+Use --maximized for borderless windowed mode that keeps panel space.
 """
 
 import sys
@@ -105,13 +105,22 @@ def main():
     pygame.mouse.set_visible(False)
 
     args = set(sys.argv[1:])
+    display_info = pygame.display.Info()
+    screen_size = (WIDTH, HEIGHT)
+
     if "--fullscreen" in args:
         flags = pygame.FULLSCREEN
-    elif "--noframe" in args:
+    elif "--maximized" in args or "--noframe" in args:
+        # Keep borderless mode but leave room for the desktop panel/taskbar.
+        panel_reserve = 40
+        safe_h = max(240, display_info.current_h - panel_reserve)
+        safe_w = max(320, display_info.current_w)
+        screen_size = (min(WIDTH, safe_w), min(HEIGHT, safe_h))
         flags = pygame.NOFRAME
     else:
         flags = 0
-    screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
+
+    screen = pygame.display.set_mode(screen_size, flags)
     clock  = pygame.time.Clock()
 
     touch_points  = []
