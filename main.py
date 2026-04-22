@@ -31,6 +31,27 @@ def clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
+def init_pygame_or_die():
+    """Initialize pygame and verify font support with a concrete render test."""
+    print(f"[startup] python: {sys.executable}")
+    print(f"[startup] pygame: {getattr(pygame, '__file__', 'unknown')}")
+
+    pygame.init()
+    try:
+        if not hasattr(pygame, "font"):
+            raise RuntimeError("pygame.font module is missing")
+
+        pygame.font.init()
+        test_font = pygame.font.SysFont("dejavusansmono", 16, bold=True)
+        test_font.render("font-ok", True, TEXT)
+        print("[startup] pygame.font: ok")
+    except Exception as exc:
+        print(f"[startup] pygame.font failed: {exc}")
+        print("[startup] likely causes: broken pygame install, missing SDL_ttf, or local module shadowing")
+        pygame.quit()
+        raise SystemExit(1)
+
+
 def neon_box(screen, rect, border, fill=PANEL_BG, radius=8):
     pygame.draw.rect(screen, fill, rect, border_radius=radius)
     glow = rect.inflate(6, 6)
@@ -221,8 +242,7 @@ def update_data(data, start_time):
 
 
 def main():
-    pygame.init()
-    pygame.font.init()
+    init_pygame_or_die()
     pygame.display.set_caption("pip-pi live intel")
     pygame.mouse.set_visible(False)
 
