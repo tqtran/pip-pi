@@ -212,20 +212,52 @@ def draw_wire_grid(screen, rect, color):
         pygame.draw.line(screen, (color[0] // 6, color[1] // 6, color[2] // 6), (xx, rect.y + 6), (xx, rect.bottom - 6), 1)
 
 
-def draw_wifi_symbol(screen, fonts, cx, cy, color):
-    # Unicode antenna bars symbol with fallback to plain text.
-    glyph = text_surf(fonts["icon_wifi"], "📶", color)
-    if glyph.get_width() < 8:
-        glyph = text_surf(fonts["icon_wifi"], "WIFI", color)
-    rect = glyph.get_rect(center=(cx, cy))
-    screen.blit(glyph, rect)
+def draw_wifi_symbol(screen, cx, cy, color):
+    for r, th in ((34, 6), (23, 5), (12, 4)):
+        pygame.draw.arc(screen, color, (cx - r, cy - r, 2 * r, 2 * r), math.radians(205), math.radians(335), th)
+    pygame.draw.circle(screen, color, (cx, cy + 12), 6)
 
 
-def draw_bluetooth_symbol(screen, fonts, cx, cy, color):
-    # Runic glyph is a reliable text-symbol fallback for Bluetooth styling.
-    glyph = text_surf(fonts["icon_bt"], "ᛒ", color)
-    rect = glyph.get_rect(center=(cx, cy))
-    screen.blit(glyph, rect)
+def draw_bluetooth_symbol(screen, cx, cy, color):
+    pygame.draw.line(screen, color, (cx, cy - 34), (cx, cy + 34), 4)
+    pygame.draw.line(screen, color, (cx, cy - 34), (cx + 22, cy - 10), 4)
+    pygame.draw.line(screen, color, (cx, cy + 34), (cx + 22, cy + 10), 4)
+    pygame.draw.line(screen, color, (cx, cy), (cx + 22, cy - 10), 4)
+    pygame.draw.line(screen, color, (cx, cy), (cx + 22, cy + 10), 4)
+
+
+def draw_capture_symbol(screen, cx, cy, color):
+    pts = [(cx - 18, cy), (cx - 10, cy), (cx - 3, cy - 10), (cx + 5, cy + 10), (cx + 13, cy), (cx + 21, cy)]
+    pygame.draw.lines(screen, color, False, pts, 3)
+    pygame.draw.circle(screen, color, (cx - 18, cy), 2)
+    pygame.draw.circle(screen, color, (cx + 21, cy), 2)
+
+
+def draw_system_symbol(screen, cx, cy, color):
+    pygame.draw.rect(screen, color, (cx - 11, cy - 11, 22, 22), 2, border_radius=3)
+    pygame.draw.rect(screen, color, (cx - 5, cy - 5, 10, 10), 2, border_radius=2)
+    for dx, dy in ((0, -16), (0, 16), (-16, 0), (16, 0), (-12, -12), (12, -12), (-12, 12), (12, 12)):
+        pygame.draw.line(screen, color, (cx + dx, cy + dy), (cx + dx // 2, cy + dy // 2), 2)
+
+
+def draw_logs_symbol(screen, cx, cy, color):
+    pygame.draw.rect(screen, color, (cx - 12, cy - 15, 24, 30), 2, border_radius=3)
+    pygame.draw.line(screen, color, (cx - 7, cy - 7), (cx + 7, cy - 7), 2)
+    pygame.draw.line(screen, color, (cx - 7, cy), (cx + 7, cy), 2)
+    pygame.draw.line(screen, color, (cx - 7, cy + 7), (cx + 3, cy + 7), 2)
+
+
+def draw_menu_symbol(screen, idx, cx, cy, color):
+    if idx == 0:
+        draw_wifi_symbol(screen, cx, cy - 2, color)
+    elif idx == 1:
+        draw_bluetooth_symbol(screen, cx, cy, color)
+    elif idx == 2:
+        draw_capture_symbol(screen, cx, cy, color)
+    elif idx == 3:
+        draw_system_symbol(screen, cx, cy, color)
+    else:
+        draw_logs_symbol(screen, cx, cy, color)
 
 
 def draw_bottom_pulse_strip(screen, t):
@@ -306,7 +338,7 @@ def draw_main(screen, fonts, data, selected, now):
     neon_box(screen, outer, (24, 94, 120), fill=(2, 4, 12), radius=10)
 
     # Top bar
-    top = pygame.Rect(14, 14, WIDTH - 28, 34)
+    top = pygame.Rect(14, 20, WIDTH - 28, 34)
     pygame.draw.line(screen, (20, 35, 60), (top.x, top.bottom), (top.right, top.bottom), 1)
     screen.blit(text_surf(fonts["top"], "KAGE // LVL 27", PINK), (top.x + 10, top.y + 8))
     live = text_surf(fonts["top"], "LIVE INTEL", PINK)
@@ -317,7 +349,6 @@ def draw_main(screen, fonts, data, selected, now):
     # Left menu
     left = pygame.Rect(14, 54, 170, HEIGHT - 68)
     menu_items = ["WIFI", "BLUETOOTH", "CAPTURE", "SYSTEM", "LOGS"]
-    menu_symbols = ["📶", "ᛒ", "≈", "⚙", "☰"]
     menu_colors = [PINK, CYAN, VIOLET, VIOLET, CYAN]
     tile_h = 78
     for i, name in enumerate(menu_items):
@@ -325,9 +356,7 @@ def draw_main(screen, fonts, data, selected, now):
         col = menu_colors[i]
         fill = (20, 8, 28) if i == selected else (5, 8, 20)
         neon_box(screen, r, col, fill=fill)
-        symbol = text_surf(fonts["menu_icon"], menu_symbols[i], col)
-        screen.blit(symbol, (r.x + 18, r.y + 24))
-        screen.blit(text_surf(fonts["menu"], name, TEXT), (r.x + 56, r.y + 28))
+        screen.blit(text_surf(fonts["menu"], name, TEXT), (r.x + 18, r.y + 28))
 
     # Right content
     rx = left.right + 10
@@ -339,14 +368,14 @@ def draw_main(screen, fonts, data, selected, now):
     screen.blit(text_surf(fonts["panel_title"], "WIFI FOUND", TEXT), (wifi.x + 18, wifi.y + 14))
     screen.blit(text_surf(fonts["wifi_num"], str(data["wifi"]), PINK), (wifi.x + 18, wifi.y + 54))
     pygame.draw.line(screen, (90, 20, 60), (wifi.x + 210, wifi.y + 20), (wifi.x + 210, wifi.bottom - 20), 2)
-    draw_wifi_symbol(screen, fonts, wifi.right - 180, wifi.y + 77, PINK)
+    draw_wifi_symbol(screen, wifi.right - 180, wifi.y + 64, PINK)
 
     ble = pygame.Rect(rx, 194, rw, 108)
     neon_box(screen, ble, CYAN)
     draw_wire_grid(screen, ble.inflate(-8, -10), CYAN)
     screen.blit(text_surf(fonts["panel_title"], "BLE FOUND", TEXT), (ble.x + 18, ble.y + 14))
     screen.blit(text_surf(fonts["lg"], str(data["ble"]), CYAN), (ble.x + 18, ble.y + 46))
-    draw_bluetooth_symbol(screen, fonts, ble.right - 250, ble.y + 54, CYAN)
+    draw_bluetooth_symbol(screen, ble.right - 250, ble.y + 54, CYAN)
 
     stats = pygame.Rect(rx, 312, rw, HEIGHT - 326)
     draw_status_panel(screen, stats, fonts, data)
@@ -360,13 +389,10 @@ def make_fonts():
         "sm": pygame.font.SysFont("dejavusansmono", 20, bold=True),
         "top": pygame.font.SysFont("dejavusansmono", 17, bold=True),
         "menu": pygame.font.SysFont("dejavusansmono", 27, bold=True),
-        "menu_icon": pygame.font.SysFont("dejavusansmono", 34, bold=True),
         "panel_title": pygame.font.SysFont("dejavusansmono", 26, bold=True),
         "lg": pygame.font.SysFont("dejavusansmono", 54, bold=True),
         "stat_val": pygame.font.SysFont("dejavusansmono", 27, bold=True),
         "wifi_num": pygame.font.SysFont("dejavusansmono", 52, bold=True),
-        "icon_wifi": pygame.font.SysFont("dejavusansmono", 92, bold=True),
-        "icon_bt": pygame.font.SysFont("dejavusansmono", 110, bold=True),
     }
 
 
