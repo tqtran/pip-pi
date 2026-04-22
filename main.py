@@ -499,13 +499,16 @@ def draw_main(screen, fonts, data, selected, current_view, light_on, now):
     # Left menu
     left = pygame.Rect(14, 54, 170, HEIGHT - 68)
     menu_items = ["WIFI", "BLUETOOTH", "HOME", "CONFIG", "LIGHT"]
-    menu_colors = [PINK, CYAN, VIOLET, VIOLET, CYAN]
+    menu_colors = [PINK, CYAN, VIOLET, VIOLET, WHITE]
     tile_h = 78
     for i, name in enumerate(menu_items):
         r = pygame.Rect(left.x, left.y + i * (tile_h + 8), left.w, tile_h)
         col = menu_colors[i]
         active = (i == selected and i != 4) or (i == 4 and light_on)
-        fill = scale_color(col, 0.78) if active else (5, 8, 20)
+        if active and i == 4:
+            fill = WHITE
+        else:
+            fill = scale_color(col, 0.78) if active else (5, 8, 20)
         neon_box(screen, r, col, fill=fill, pulse=now + i * 0.4)
         if active:
             draw_active_button_shimmer(screen, r, now)
