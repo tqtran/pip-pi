@@ -1,12 +1,22 @@
 import os
 import pygame
 
-print("SDL_VIDEODRIVER =", os.environ.get("SDL_VIDEODRIVER"))
-print("before init")
+os.environ.setdefault("SDL_VIDEODRIVER", "kmsdrm")
+
 pygame.init()
-print("after init")
-print("display init?", pygame.display.get_init())
-print("about to set_mode")
-screen = pygame.display.set_mode((480, 320))
-print("driver =", pygame.display.get_driver())
-print("set_mode worked")
+screen = pygame.display.set_mode((480, 320), pygame.FULLSCREEN)
+screen.fill((0, 0, 0))
+pygame.draw.circle(screen, (255, 0, 0), (240, 160), 80)
+pygame.display.flip()
+
+running = True
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN:
+            running = False
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            running = False
+
+pygame.quit()
