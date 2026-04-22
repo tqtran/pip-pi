@@ -5,7 +5,7 @@ Screen 1: Touch proof-of-concept — four coloured quadrants, touch feedback.
 
 Display target: 320×480 panel run in landscape → 480×320 pixels.
 Run with --fullscreen for the Pi.
-Use --maximized for borderless windowed mode that keeps panel space.
+Tap the top-centre toggle to switch between fullscreen and windowed mode.
 """
 
 import sys
@@ -30,6 +30,12 @@ TOUCH_RADIUS   = 25    # radius = 25 px → 50 px diameter circle
 TOUCH_LIFETIME = 2.0   # seconds the circle stays on screen
 FLASH_INTERVAL = 0.10  # seconds per flash half-cycle
 FLASH_CYCLES   = 5     # half-cycles (flash on → off → on …)
+TOGGLE_W, TOGGLE_H = 72, 22
+
+
+def taskbar_toggle_rect():
+    """Small top-centre hit target to toggle fullscreen/windowed mode."""
+    return pygame.Rect((WIDTH - TOGGLE_W) // 2, 6, TOGGLE_W, TOGGLE_H)
 
 
 def quadrant_index(x, y):
@@ -97,6 +103,22 @@ def draw_touch_circles(screen, touch_points):
         pygame.draw.circle(screen, (  0,   0,   0), (tp.x, tp.y), TOUCH_RADIUS, 2)
 
 
+def draw_taskbar_toggle(screen, is_fullscreen):
+    rect = taskbar_toggle_rect()
+    pygame.draw.rect(screen, (0, 0, 0), rect, border_radius=8)
+    pygame.draw.rect(screen, (255, 255, 255), rect, 2, border_radius=8)
+
+    cx = rect.centerx
+    cy = rect.centery
+    if is_fullscreen:
+        # Fullscreen currently on: show an "up" chevron hint to reveal taskbar.
+        pts = [(cx - 10, cy + 4), (cx, cy - 4), (cx + 10, cy + 4)]
+    else:
+        # Windowed currently on: show a "down" chevron hint to return fullscreen.
+        pts = [(cx - 10, cy - 4), (cx, cy + 4), (cx + 10, cy - 4)]
+    pygame.draw.lines(screen, (255, 255, 255), False, pts, 3)
+
+
 # ── Main loop ────────────────────────────────────────────────────────────────
 
 def main():
@@ -105,22 +127,9 @@ def main():
     pygame.mouse.set_visible(False)
 
     args = set(sys.argv[1:])
-    display_info = pygame.display.Info()
-    screen_size = (WIDTH, HEIGHT)
-
-    if "--fullscreen" in args:
-        flags = pygame.FULLSCREEN
-    elif "--maximized" in args or "--noframe" in args:
-        # Keep borderless mode but leave room for the desktop panel/taskbar.
-        panel_reserve = 40
-        safe_h = max(240, display_info.current_h - panel_reserve)
-        safe_w = max(320, display_info.current_w)
-        screen_size = (min(WIDTH, safe_w), min(HEIGHT, safe_h))
-        flags = pygame.NOFRAME
-    else:
-        flags = 0
-
-    screen = pygame.display.set_mode(screen_size, flags)
+    is_fullscreen = "--fullscreen" in args
+    flags = pygame.FULLSCREEN if is_fullscreen else 0
+    screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
     clock  = pygame.time.Clock()
 
     touch_points  = []
@@ -138,6 +147,11 @@ def main():
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 x, y = event.pos
+                if taskbar_toggle_rect().collidepoint(x, y):
+                    is_fullscreen = not is_fullscreen
+                    flags = pygame.FULLSCREEN if is_fullscreen else 0
+                    screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
+                    continue
                 touch_points.append(TouchPoint(x, y))
                 flash = FlashEffect(quadrant_index(x, y))
 
@@ -155,6 +169,7 @@ def main():
         # ── Draw ────────────────────────────────────────────────────────────
         draw_quadrants(screen, flash_quad, flash_on)
         draw_touch_circles(screen, touch_points)
+        draw_taskbar_toggle(screen, is_fullscreen)
         pygame.draw.circle(screen, (0, 0, 0),     (0, 0),               15)  # origin marker
         pygame.draw.circle(screen, (128, 0, 128), (WIDTH - 1, HEIGHT - 1), 15)  # far-corner marker
 
