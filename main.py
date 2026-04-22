@@ -4,7 +4,8 @@ pip-pi: Wrist Control Panel for Raspberry Pi Zero
 Screen 1: Touch proof-of-concept — four coloured quadrants, touch feedback.
 
 Display target: 320×480 panel run in landscape → 480×320 pixels.
-Run with --fullscreen for the Pi; omit the flag for desktop testing.
+Run with --fullscreen for the Pi.
+Use --noframe for borderless windowed mode on desktop.
 """
 
 import sys
@@ -103,7 +104,13 @@ def main():
     pygame.display.set_caption("pip-pi")
     pygame.mouse.set_visible(False)
 
-    flags  = pygame.FULLSCREEN if "--fullscreen" in sys.argv else 0
+    args = set(sys.argv[1:])
+    if "--fullscreen" in args:
+        flags = pygame.FULLSCREEN
+    elif "--noframe" in args:
+        flags = pygame.NOFRAME
+    else:
+        flags = 0
     screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
     clock  = pygame.time.Clock()
 
