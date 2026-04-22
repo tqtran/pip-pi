@@ -9,6 +9,7 @@ No image assets required.
 import math
 import json
 import os
+import queue
 import re
 import shutil
 import subprocess
@@ -242,37 +243,46 @@ def _bg_scan_wifi(data, cache):
 
 def _bg_scan_ble(data, cache):
     t0 = time.time()
-    # Stream bluetoothctl scan output for 10s to capture RSSI alongside device names.
-    # Lines of interest:
+    # Lines of interest from bluetoothctl:
     #   [NEW] Device AA:BB:CC:DD:EE:FF Name
     #   [CHG] Device AA:BB:CC:DD:EE:FF RSSI: -70
-    names = {}   # mac -> name
-    rssis = {}   # mac -> best (strongest) rssi seen
+    names = {}  # mac -> name
+    rssis = {}  # mac -> best (strongest) rssi seen
+    proc = None
     try:
         proc = subprocess.Popen(
             ["bluetoothctl", "scan", "on"],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, bufsize=1
         )
+        # Feed stdout into a queue from a daemon thread so readline never
+        # blocks past the deadline when bluetoothctl goes quiet.
+        line_q = queue.Queue()
+        def _feeder(stream, q):
+            try:
+                for ln in stream:
+                    q.put(ln)
+            except Exception:
+                pass
+        threading.Thread(target=_feeder, args=(proc.stdout, line_q), daemon=True).start()
+
         deadline = time.time() + 10.0
         while time.time() < deadline:
             try:
-                line = proc.stdout.readline()
-            except Exception:
-                break
-            if not line:
-                break
-            # Strip ANSI escape codes bluetoothctl emits (e.g. \x1b[0;92m[NEW]\x1b[0m).
-            clean = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', line).strip()
-            # Skip the interactive prompt line (e.g. "[bluetooth]#").
-            if clean.startswith('[bluetooth]') or not clean:
+                line = line_q.get(timeout=0.25)
+            except queue.Empty:
                 continue
-            parts = clean.strip().split(None, 4)
+            # Strip ANSI escape codes (e.g. \x1b[0;92m[NEW]\x1b[0m).
+            clean = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', line).strip()
+            # Skip the interactive prompt (e.g. "[bluetooth]#").
+            if not clean or clean.startswith('[bluetooth]'):
+                continue
+            parts = clean.split(None, 4)
             # e.g. ['[NEW]', 'Device', 'AA:BB:CC:DD:EE:FF', 'Name']
             if len(parts) >= 3 and parts[1] == "Device":
                 mac = parts[2]
                 if len(parts) >= 4:
-                    rest = parts[3] if len(parts) == 4 else " ".join(parts[3:])
+                    rest = " ".join(parts[3:])
                     if rest.startswith("RSSI:"):
                         try:
                             rssi = int(rest.split(":", 1)[1].strip())
@@ -282,36 +292,35 @@ def _bg_scan_ble(data, cache):
                             pass
                     else:
                         names[mac] = rest
-        proc.terminate()
-        try:
-            proc.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            proc.kill()
     except FileNotFoundError:
         print("[scan] ble: bluetoothctl not found")
-        cache["ble_scanning"] = False
         return
-    subprocess.run(["bluetoothctl", "scan", "off"],
-                   timeout=3, capture_output=True)
-    # Merge with the static device list (catches pre-cached devices without RSSI).
-    static = read_ble_devices()
-    seen = set(names.keys()) | set(rssis.keys())
-    for (name, mac) in static:
-        if mac not in seen:
-            names[mac] = name
-            seen.add(mac)
-    all_macs = set(names.keys()) | set(rssis.keys())
-    result = []
-    for mac in all_macs:
-        name = names.get(mac, mac)
-        rssi = rssis.get(mac)  # None if no RSSI observed
-        result.append((name, mac, rssi))
-    # Sort by RSSI descending (strongest first); devices with no RSSI go last.
-    result.sort(key=lambda x: (x[2] is None, -(x[2] or 0)))
-    print(f"[scan] ble: {len(result)} ({time.time() - t0:.1f}s)")
-    data["ble_devices"] = result
-    data["ble"] = len(result)
-    cache["ble_scanning"] = False
+    finally:
+        if proc is not None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+        subprocess.run(["bluetoothctl", "scan", "off"],
+                       timeout=3, capture_output=True)
+        # Merge streamed results with the static device list.
+        static = read_ble_devices()
+        seen = set(names.keys()) | set(rssis.keys())
+        for (name, mac) in static:
+            if mac not in seen:
+                names[mac] = name
+        all_macs = set(names.keys()) | set(rssis.keys())
+        result = []
+        for mac in all_macs:
+            name = names.get(mac, mac)
+            rssi = rssis.get(mac)
+            result.append((name, mac, rssi))
+        result.sort(key=lambda x: (x[2] is None, -(x[2] or 0)))
+        print(f"[scan] ble: {len(result)} ({time.time() - t0:.1f}s)")
+        data["ble_devices"] = result
+        data["ble"] = len(result)
+        cache["ble_scanning"] = False
 
 
 def _wifi_interface():
@@ -695,21 +704,30 @@ def draw_wifi_view(screen, rect, fonts, data, now):
         filled = int(round(frac * 5))
         return "".join("\u2588" if i < filled else "\u2591" for i in range(5))
 
-    row_h = S(28)
+    row_h = S(56)
     max_rows = max(1, (rect.h - S(48)) // row_h)
     visible = networks[:max_rows]
+
+    dbm_col_w = fonts["list_item"].size("-100dBm")[0] + S(8)
+    bar_col_w = fonts["list_item"].size("\u2588" * 5)[0] + S(6)
+    name_max_w = rect.w - S(24) - bar_col_w - dbm_col_w
 
     for idx, (ssid, dbm) in enumerate(visible):
         y = rect.y + S(48) + idx * row_h
         bars = signal_bars(dbm)
         bar_color = PINK if dbm >= -65 else CYAN if dbm >= -75 else MUTED
-        screen.blit(text_surf(fonts["tiny"], bars, bar_color), (rect.x + S(12), y))
-        bar_surf_w = fonts["tiny"].size(bars)[0]
-        screen.blit(text_surf(fonts["tiny"], f" {ssid}", TEXT), (rect.x + S(12) + bar_surf_w, y))
-        screen.blit(text_surf(fonts["tiny"], f"{int(dbm)}dBm", MUTED), (rect.right - S(72), y))
+        bx = rect.x + S(12)
+        screen.blit(text_surf(fonts["list_item"], bars, bar_color), (bx, y))
+        # Clip SSID to available width
+        ssid_surf = fonts["list_item"].render(f" {ssid}", True, TEXT)
+        if ssid_surf.get_width() > name_max_w:
+            ssid_surf = ssid_surf.subsurface((0, 0, name_max_w, ssid_surf.get_height()))
+        screen.blit(ssid_surf, (bx + bar_col_w, y))
+        dbm_str = f"{int(dbm)}dBm"
+        screen.blit(text_surf(fonts["list_item"], dbm_str, MUTED), (rect.right - dbm_col_w, y))
 
     if len(networks) > max_rows:
-        screen.blit(text_surf(fonts["tiny"], f"+{len(networks) - max_rows} more", MUTED), (rect.x + S(18), rect.bottom - S(20)))
+        screen.blit(text_surf(fonts["list_item"], f"+{len(networks) - max_rows} more", MUTED), (rect.x + S(18), rect.bottom - S(20)))
 
 
 def draw_ble_view(screen, rect, fonts, data, now):
@@ -740,23 +758,30 @@ def draw_ble_view(screen, rect, fonts, data, now):
             return MUTED
         return CYAN if rssi >= -70 else PINK if rssi >= -85 else MUTED
 
-    row_h = S(28)
+    row_h = S(56)
     max_rows = max(1, (rect.h - S(48)) // row_h)
     visible = devices[:max_rows]
+
+    dbm_col_w = fonts["list_item"].size("-100dBm")[0] + S(8)
+    bar_col_w = fonts["list_item"].size("\u2588" * 5)[0] + S(6)
+    name_max_w = rect.w - S(24) - bar_col_w - dbm_col_w
 
     for idx, entry in enumerate(visible):
         name, mac, rssi = entry if len(entry) == 3 else (entry[0], entry[1], None)
         y = rect.y + S(48) + idx * row_h
         bars = signal_bars(rssi)
         bc = bar_color(rssi)
-        screen.blit(text_surf(fonts["tiny"], bars, bc), (rect.x + S(12), y))
-        bar_w = fonts["tiny"].size(bars)[0]
-        screen.blit(text_surf(fonts["tiny"], f" {name}", TEXT), (rect.x + S(12) + bar_w, y))
+        bx = rect.x + S(12)
+        screen.blit(text_surf(fonts["list_item"], bars, bc), (bx, y))
+        name_surf = fonts["list_item"].render(f" {name}", True, TEXT)
+        if name_surf.get_width() > name_max_w:
+            name_surf = name_surf.subsurface((0, 0, name_max_w, name_surf.get_height()))
+        screen.blit(name_surf, (bx + bar_col_w, y))
         rssi_str = f"{rssi}dBm" if rssi is not None else "?"
-        screen.blit(text_surf(fonts["tiny"], rssi_str, MUTED), (rect.right - fonts["tiny"].size(rssi_str)[0] - S(12), y))
+        screen.blit(text_surf(fonts["list_item"], rssi_str, MUTED), (rect.right - dbm_col_w, y))
 
     if len(devices) > max_rows:
-        screen.blit(text_surf(fonts["tiny"], f"+{len(devices) - max_rows} more", MUTED), (rect.x + S(18), rect.bottom - S(20)))
+        screen.blit(text_surf(fonts["list_item"], f"+{len(devices) - max_rows} more", MUTED), (rect.x + S(18), rect.bottom - S(20)))
 
 
 def draw_placeholder_view(screen, rect, fonts, title, now, color):
@@ -899,6 +924,7 @@ def make_fonts():
         "sm": pygame.font.SysFont("dejavusansmono", fs(20), bold=True),
         "top": pygame.font.SysFont("dejavusansmono", fs(17), bold=True),
         "tiny": pygame.font.SysFont("dejavusansmono", fs(12), bold=True),
+        "list_item": pygame.font.SysFont("dejavusansmono", fs(24), bold=True),
         "menu": pygame.font.SysFont("dejavusansmono", fs(27), bold=True),
         "panel_title": pygame.font.SysFont("dejavusansmono", fs(26), bold=True),
         "lg": pygame.font.SysFont("dejavusansmono", fs(54), bold=True),
