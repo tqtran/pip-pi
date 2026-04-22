@@ -773,13 +773,13 @@ def main():
         "wifi_scanning": False,
         "ble_scanning": False,
     }
-    # Stagger BLE scan 30s after WiFi (WiFi fires immediately at t=0).
+    # Stagger BLE scan by half its interval after WiFi (WiFi fires immediately at t=0).
     _wifi_secs = CONFIG["scan_intervals"]["wifi_seconds"]
     _ble_secs = CONFIG["scan_intervals"]["ble_seconds"]
     _now = time.time()
     cache = {
-        "wifi_refresh_at": _now - _wifi_secs,
-        "ble_refresh_at": _now - _ble_secs + 30.0,
+        "wifi_refresh_at": _now - _wifi_secs,       # fires immediately
+        "ble_refresh_at": _now - _ble_secs / 2.0,   # fires half-interval later
     }
     ripples = []
 
