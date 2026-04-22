@@ -7,6 +7,7 @@ No image assets required.
 """
 
 import math
+import json
 import os
 import shutil
 import subprocess
@@ -19,8 +20,9 @@ import pygame
 WIDTH, HEIGHT = 720, 480
 FPS = 30
 RIPPLE_LIFE = 0.45
+CONFIG_PATH = "pip-pi.config.json"
 
-CONFIG = {
+DEFAULT_CONFIG = {
     "scan_intervals": {
         "ble_seconds": 30.0,
         "wifi_seconds": 30.0,
@@ -30,6 +32,47 @@ CONFIG = {
         "stats_seconds": 60.0,
     },
 }
+
+
+def clone_default_config():
+    return {
+        "scan_intervals": {
+            "ble_seconds": DEFAULT_CONFIG["scan_intervals"]["ble_seconds"],
+            "wifi_seconds": DEFAULT_CONFIG["scan_intervals"]["wifi_seconds"],
+        },
+        "refresh_intervals": {
+            "load_seconds": DEFAULT_CONFIG["refresh_intervals"]["load_seconds"],
+            "stats_seconds": DEFAULT_CONFIG["refresh_intervals"]["stats_seconds"],
+        },
+    }
+
+
+def write_config_file(cfg):
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2, sort_keys=True)
+
+
+def load_config():
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            if isinstance(cfg, dict):
+                return cfg
+            print(f"[config] invalid root type in {CONFIG_PATH}; using defaults")
+        except Exception as exc:
+            print(f"[config] failed to read {CONFIG_PATH}: {exc}; using defaults")
+
+    cfg = clone_default_config()
+    try:
+        write_config_file(cfg)
+        print(f"[config] wrote default config: {CONFIG_PATH}")
+    except Exception as exc:
+        print(f"[config] failed to write default config {CONFIG_PATH}: {exc}")
+    return cfg
+
+
+CONFIG = load_config()
 
 BG = (4, 6, 16)
 PANEL_BG = (8, 10, 24)
