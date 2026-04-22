@@ -393,7 +393,7 @@ def draw_cpu_mem_panel(screen, rect, fonts, data):
     for i, (name, val, color) in enumerate(items):
         x = rect.x + 12 + i * col_w
         screen.blit(text_surf(fonts["sm"], name, MUTED), (x, rect.y + 48))
-        screen.blit(text_surf(fonts["stat_val"], f"{int(val)}%", color), (x + 70, rect.y + 46))
+        screen.blit(text_surf(fonts["load_val"], f"{int(val)}%", color), (x + 70, rect.y + 40))
         draw_metric_bar(screen, x, rect.y + 90, val, color)
         if i == 0:
             pygame.draw.line(screen, (36, 43, 73), (x + col_w - 8, rect.y + 38), (x + col_w - 8, rect.bottom - 16), 1)
@@ -458,6 +458,7 @@ def make_fonts():
         "panel_title": pygame.font.SysFont("dejavusansmono", 26, bold=True),
         "lg": pygame.font.SysFont("dejavusansmono", 54, bold=True),
         "stat_val": pygame.font.SysFont("dejavusansmono", 27, bold=True),
+        "load_val": pygame.font.SysFont("dejavusansmono", 41, bold=True),
         "wifi_num": pygame.font.SysFont("dejavusansmono", 52, bold=True),
     }
 
