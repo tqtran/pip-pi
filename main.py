@@ -247,6 +247,34 @@ def neon_box(screen, rect, border, fill=PANEL_BG, radius=8, pulse=0.0):
     pygame.draw.rect(screen, line_color, rect, 2, border_radius=radius)
 
 
+def draw_active_button_shimmer(screen, rect, now):
+    """Draw a moving highlight segment along a button border."""
+    overlay = pygame.Surface((rect.w, rect.h), pygame.SRCALPHA)
+    w, h = rect.w - 1, rect.h - 1
+    perim = max(1, 2 * (w + h))
+    head = int((now * 220.0) % perim)
+    seg_len = 34
+
+    def point_at(d):
+        d %= perim
+        if d < w:
+            return d, 0
+        d -= w
+        if d < h:
+            return w, d
+        d -= h
+        if d < w:
+            return w - d, h
+        d -= w
+        return 0, h - d
+
+    tail = (head - seg_len) % perim
+    p1 = point_at(tail)
+    p2 = point_at(head)
+    pygame.draw.line(overlay, (255, 255, 255, 190), p1, p2, 2)
+    screen.blit(overlay, rect.topleft)
+
+
 def text_surf(font, s, color=TEXT):
     return font.render(s, True, color)
 
@@ -477,9 +505,12 @@ def draw_main(screen, fonts, data, selected, current_view, light_on, now):
         r = pygame.Rect(left.x, left.y + i * (tile_h + 8), left.w, tile_h)
         col = menu_colors[i]
         active = (i == selected and i != 4) or (i == 4 and light_on)
-        fill = (20, 8, 28) if active else (5, 8, 20)
+        fill = scale_color(col, 0.78) if active else (5, 8, 20)
         neon_box(screen, r, col, fill=fill, pulse=now + i * 0.4)
-        screen.blit(text_surf(fonts["menu"], name, TEXT), (r.x + 18, r.y + 28))
+        if active:
+            draw_active_button_shimmer(screen, r, now)
+        text_col = (10, 12, 18) if active else TEXT
+        screen.blit(text_surf(fonts["menu"], name, text_col), (r.x + 18, r.y + 28))
 
     # Right content
     rx = left.right + 10
