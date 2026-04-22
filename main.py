@@ -18,8 +18,18 @@ import pygame
 
 WIDTH, HEIGHT = 720, 480
 FPS = 30
-DATA_REFRESH_SECONDS = 5.0
 RIPPLE_LIFE = 0.45
+
+CONFIG = {
+    "scan_intervals": {
+        "ble_seconds": 30.0,
+        "wifi_seconds": 30.0,
+    },
+    "refresh_intervals": {
+        "load_seconds": 5.0,
+        "stats_seconds": 60.0,
+    },
+}
 
 BG = (4, 6, 16)
 PANEL_BG = (8, 10, 24)
@@ -30,6 +40,7 @@ CYAN = (0, 197, 255)
 VIOLET = (122, 56, 255)
 RED = (255, 36, 36)
 WHITE = (255, 255, 255)
+FLASHLIGHT = (255, 255, 255)
 
 
 def clamp(v, lo, hi):
@@ -38,6 +49,10 @@ def clamp(v, lo, hi):
 
 def c_to_f(celsius):
     return (celsius * 9.0 / 5.0) + 32.0
+
+
+def scale_color(color, factor):
+    return tuple(clamp(int(c * factor), 0, 255) for c in color)
 
 
 def read_text(path):
@@ -171,8 +186,7 @@ def read_uptime_str():
             elapsed = int(float(txt.split()[0]))
             hh = elapsed // 3600
             mm = (elapsed % 3600) // 60
-            ss = elapsed % 60
-            return f"{hh:01d}:{mm:02d}:{ss:02d}"
+            return f"{hh:01d}:{mm:02d}"
         except Exception:
             pass
 
@@ -223,11 +237,14 @@ def init_click_sound():
         return None
 
 
-def neon_box(screen, rect, border, fill=PANEL_BG, radius=8):
+def neon_box(screen, rect, border, fill=PANEL_BG, radius=8, pulse=0.0):
+    pulse_factor = 0.88 + 0.18 * (0.5 + 0.5 * math.sin(pulse))
+    glow_color = scale_color(border, 0.22 + 0.18 * (0.5 + 0.5 * math.sin(pulse)))
+    line_color = scale_color(border, pulse_factor)
     pygame.draw.rect(screen, fill, rect, border_radius=radius)
     glow = rect.inflate(6, 6)
-    pygame.draw.rect(screen, (border[0] // 4, border[1] // 4, border[2] // 4), glow, 1, border_radius=radius + 2)
-    pygame.draw.rect(screen, border, rect, 2, border_radius=radius)
+    pygame.draw.rect(screen, glow_color, glow, 1, border_radius=radius + 2)
+    pygame.draw.rect(screen, line_color, rect, 2, border_radius=radius)
 
 
 def text_surf(font, s, color=TEXT):
@@ -241,6 +258,30 @@ def draw_metric_bar(screen, x, y, value, color):
     for i in range(blocks):
         c = color if i < on else (28, 34, 62)
         pygame.draw.rect(screen, c, (x + i * (w + gap), y, w, h), border_radius=2)
+
+
+def draw_scanline_shimmer(screen, rect, now):
+    overlay = pygame.Surface((rect.w, rect.h), pygame.SRCALPHA)
+    bright_y = int((now * 48) % max(1, rect.h))
+    for y in range(0, rect.h, 4):
+        alpha = 7
+        if abs(y - bright_y) < 2:
+            alpha = 18
+        elif abs(y - bright_y) < 8:
+            alpha = 10
+        pygame.draw.line(overlay, (255, 255, 255, alpha), (0, y), (rect.w, y), 1)
+    screen.blit(overlay, rect.topleft)
+
+
+def draw_last_update(screen, fonts, data, top_rect, now):
+    stamp = data.get("last_update", "--:--:--")
+    label = text_surf(fonts["tiny"], f"UPDATED {stamp}", MUTED)
+    dot_on = int(now * 2) % 2 == 0
+    x = top_rect.right - 250
+    y = top_rect.y + 11
+    if dot_on:
+        pygame.draw.circle(screen, CYAN, (x, y + 5), 3)
+    screen.blit(label, (x + 10, y - 4))
 
 
 def draw_wire_grid(screen, rect, color):
@@ -360,8 +401,8 @@ def draw_ripples(screen, ripples, now):
     screen.blit(overlay, (0, 0))
 
 
-def draw_status_panel(screen, rect, fonts, data):
-    neon_box(screen, rect, VIOLET)
+def draw_status_panel(screen, rect, fonts, data, now):
+    neon_box(screen, rect, VIOLET, pulse=now + 0.8)
     title = text_surf(fonts["panel_title"], "SYSTEM STATS", TEXT)
     screen.blit(title, (rect.x + 12, rect.y + 10))
 
@@ -384,26 +425,38 @@ def draw_status_panel(screen, rect, fonts, data):
     screen.blit(text_surf(fonts["stat_val"], data["uptime"], VIOLET), (up_x, rect.y + 92))
 
 
-def draw_cpu_mem_panel(screen, rect, fonts, data):
-    neon_box(screen, rect, CYAN)
+def draw_cpu_mem_panel(screen, rect, fonts, data, now):
+    neon_box(screen, rect, CYAN, pulse=now + 1.7)
     screen.blit(text_surf(fonts["panel_title"], "SYSTEM LOAD", TEXT), (rect.x + 12, rect.y + 10))
 
     col_w = (rect.w - 24) // 2
     items = [("CPU", data["cpu"], CYAN), ("MEM", data["mem"], CYAN)]
     for i, (name, val, color) in enumerate(items):
         x = rect.x + 12 + i * col_w
-        screen.blit(text_surf(fonts["sm"], name, MUTED), (x, rect.y + 48))
-        screen.blit(text_surf(fonts["load_val"], f"{int(val)}%", color), (x + 70, rect.y + 40))
+        label = text_surf(fonts["sm"], name, MUTED)
+        screen.blit(label, (x, rect.y + 48))
+        screen.blit(text_surf(fonts["load_val"], f"{int(val)}%", color), (x + label.get_width() + 12, rect.y + 40))
         draw_metric_bar(screen, x, rect.y + 90, val, color)
         if i == 0:
             pygame.draw.line(screen, (36, 43, 73), (x + col_w - 8, rect.y + 38), (x + col_w - 8, rect.bottom - 16), 1)
 
 
-def draw_main(screen, fonts, data, selected, now):
+def draw_placeholder_view(screen, rect, fonts, title, now, color):
+    neon_box(screen, rect, color, pulse=now + 2.5)
+    draw_scanline_shimmer(screen, rect, now)
+    screen.blit(text_surf(fonts["panel_title"], title, TEXT), (rect.x + 18, rect.y + 18))
+    screen.blit(text_surf(fonts["sm"], "Module stub. Tap HOME to return.", MUTED), (rect.x + 18, rect.y + 60))
+
+
+def draw_flashlight_overlay(screen, rect):
+    pygame.draw.rect(screen, FLASHLIGHT, rect, border_radius=8)
+
+
+def draw_main(screen, fonts, data, selected, current_view, light_on, now):
     screen.fill(BG)
 
     outer = pygame.Rect(6, 6, WIDTH - 12, HEIGHT - 12)
-    neon_box(screen, outer, (24, 94, 120), fill=(2, 4, 12), radius=10)
+    neon_box(screen, outer, (24, 94, 120), fill=(2, 4, 12), radius=10, pulse=now)
 
     # Top bar
     top = pygame.Rect(14, 20, WIDTH - 28, 34)
@@ -413,26 +466,36 @@ def draw_main(screen, fonts, data, selected, now):
     screen.blit(live, (WIDTH // 2 - live.get_width() // 2, top.y + 8))
     clock_text = text_surf(fonts["top"], data["clock"], PINK)
     screen.blit(clock_text, (top.right - 122, top.y + 8))
+    draw_last_update(screen, fonts, data, top, now)
 
     # Left menu
     left = pygame.Rect(14, 54, 170, HEIGHT - 68)
-    menu_items = ["WIFI", "BLUETOOTH", "CAPTURE", "SYSTEM", "LOGS"]
+    menu_items = ["WIFI", "BLUETOOTH", "HOME", "CONFIG", "LIGHT"]
     menu_colors = [PINK, CYAN, VIOLET, VIOLET, CYAN]
     tile_h = 78
     for i, name in enumerate(menu_items):
         r = pygame.Rect(left.x, left.y + i * (tile_h + 8), left.w, tile_h)
         col = menu_colors[i]
-        fill = (20, 8, 28) if i == selected else (5, 8, 20)
-        neon_box(screen, r, col, fill=fill)
+        active = (i == selected and i != 4) or (i == 4 and light_on)
+        fill = (20, 8, 28) if active else (5, 8, 20)
+        neon_box(screen, r, col, fill=fill, pulse=now + i * 0.4)
         screen.blit(text_surf(fonts["menu"], name, TEXT), (r.x + 18, r.y + 28))
 
     # Right content
     rx = left.right + 10
     rw = WIDTH - rx - 14
+    content_rect = pygame.Rect(rx, 54, rw, HEIGHT - 68)
+
+    if current_view != "home":
+        draw_placeholder_view(screen, content_rect, fonts, current_view.upper(), now, CYAN if current_view == "bluetooth" else PINK)
+        if light_on:
+            draw_flashlight_overlay(screen, content_rect)
+        return
 
     wifi = pygame.Rect(rx, 54, rw, 130)
-    neon_box(screen, wifi, PINK)
+    neon_box(screen, wifi, PINK, pulse=now + 0.2)
     draw_wire_grid(screen, wifi.inflate(-8, -10), PINK)
+    draw_scanline_shimmer(screen, wifi, now)
     screen.blit(text_surf(fonts["panel_title"], "WIFI FOUND", TEXT), (wifi.x + 18, wifi.y + 14))
     screen.blit(text_surf(fonts["wifi_num"], str(data["wifi"]), PINK), (wifi.x + 18, wifi.y + 54))
     split_x = wifi.x + (wifi.w // 2)
@@ -441,10 +504,15 @@ def draw_main(screen, fonts, data, selected, now):
     screen.blit(text_surf(fonts["wifi_num"], str(data["ble"]), CYAN), (split_x + 18, wifi.y + 54))
 
     cpu_mem = pygame.Rect(rx, 194, rw, 108)
-    draw_cpu_mem_panel(screen, cpu_mem, fonts, data)
+    draw_cpu_mem_panel(screen, cpu_mem, fonts, data, now)
+    draw_scanline_shimmer(screen, cpu_mem, now + 0.6)
 
     stats = pygame.Rect(rx, 312, rw, HEIGHT - 326)
-    draw_status_panel(screen, stats, fonts, data)
+    draw_status_panel(screen, stats, fonts, data, now)
+    draw_scanline_shimmer(screen, stats, now + 1.1)
+
+    if light_on:
+        draw_flashlight_overlay(screen, content_rect)
 
     draw_bottom_pulse_strip(screen, now)
 
@@ -454,6 +522,7 @@ def make_fonts():
     return {
         "sm": pygame.font.SysFont("dejavusansmono", 20, bold=True),
         "top": pygame.font.SysFont("dejavusansmono", 17, bold=True),
+        "tiny": pygame.font.SysFont("dejavusansmono", 12, bold=True),
         "menu": pygame.font.SysFont("dejavusansmono", 27, bold=True),
         "panel_title": pygame.font.SysFont("dejavusansmono", 26, bold=True),
         "lg": pygame.font.SysFont("dejavusansmono", 54, bold=True),
@@ -463,37 +532,51 @@ def make_fonts():
     }
 
 
-def update_data(data, cache, start_time):
-    cpu = read_cpu_percent(cache)
-    mem = read_mem_percent()
-    store = read_storage_percent()
-    temp_c = read_temp_c()
-    wifi = read_wifi_count()
-    ble = read_ble_count()
+def update_data(data, cache, start_time, now):
+    intervals = CONFIG["refresh_intervals"]
+    scan_intervals = CONFIG["scan_intervals"]
+
+    if now - cache.get("load_refresh_at", -intervals["load_seconds"]) >= intervals["load_seconds"]:
+        cpu = read_cpu_percent(cache)
+        mem = read_mem_percent()
+        if cpu is not None:
+            data["cpu"] = cpu
+        if mem is not None:
+            data["mem"] = mem
+        cache["load_refresh_at"] = now
+
+    if now - cache.get("stats_refresh_at", -intervals["stats_seconds"]) >= intervals["stats_seconds"]:
+        store = read_storage_percent()
+        temp_c = read_temp_c()
+        if store is not None:
+            data["store"] = store
+        if temp_c is not None:
+            data["temp"] = clamp(temp_c, -40.0, 140.0)
+        cache["stats_refresh_at"] = now
+
+    if now - cache.get("wifi_refresh_at", -scan_intervals["wifi_seconds"]) >= scan_intervals["wifi_seconds"]:
+        wifi = read_wifi_count()
+        if wifi is not None:
+            data["wifi"] = clamp(wifi, 0, 999)
+        cache["wifi_refresh_at"] = now
+
+    if now - cache.get("ble_refresh_at", -scan_intervals["ble_seconds"]) >= scan_intervals["ble_seconds"]:
+        ble = read_ble_count()
+        if ble is not None:
+            data["ble"] = clamp(ble, 0, 999)
+        cache["ble_refresh_at"] = now
+
     uptime = read_uptime_str()
 
-    if cpu is not None:
-        data["cpu"] = cpu
-    if mem is not None:
-        data["mem"] = mem
-    if store is not None:
-        data["store"] = store
-    if temp_c is not None:
-        data["temp"] = clamp(temp_c, -40.0, 140.0)
-    if wifi is not None:
-        data["wifi"] = clamp(wifi, 0, 999)
-    if ble is not None:
-        data["ble"] = clamp(ble, 0, 999)
-
     data["clock"] = time.strftime("%H:%M")
+    data["last_update"] = time.strftime("%H:%M:%S")
     if uptime is not None:
         data["uptime"] = uptime
     else:
         elapsed = int(time.time() - start_time)
         hh = elapsed // 3600
         mm = (elapsed % 3600) // 60
-        ss = elapsed % 60
-        data["uptime"] = f"{hh:01d}:{mm:02d}:{ss:02d}"
+        data["uptime"] = f"{hh:01d}:{mm:02d}"
 
 
 def main():
@@ -507,9 +590,10 @@ def main():
 
     fonts = make_fonts()
     click_sound = init_click_sound()
-    selected = 0
+    selected = 2
+    current_view = "home"
+    light_on = False
     start = time.time()
-    last_data = -DATA_REFRESH_SECONDS
     data = {
         "wifi": 12,
         "ble": 7,
@@ -518,6 +602,7 @@ def main():
         "store": 45,
         "temp": 62,
         "clock": "00:00",
+        "last_update": "--:--:--",
         "uptime": "0:00:00",
     }
     cache = {}
@@ -546,15 +631,24 @@ def main():
                     for i in range(5):
                         y = start_y + i * (tile_h + 8)
                         if y <= my <= y + tile_h:
-                            selected = i
+                            if i == 4:
+                                light_on = not light_on
+                            else:
+                                selected = i
+                                if i == 2:
+                                    current_view = "home"
+                                elif i == 0:
+                                    current_view = "wifi"
+                                elif i == 1:
+                                    current_view = "bluetooth"
+                                elif i == 3:
+                                    current_view = "config"
                             break
 
         now = time.time()
-        if now - last_data >= DATA_REFRESH_SECONDS:
-            update_data(data, cache, start)
-            last_data = now
+        update_data(data, cache, start, now)
 
-        draw_main(screen, fonts, data, selected, now)
+        draw_main(screen, fonts, data, selected, current_view, light_on, now)
         draw_ripples(screen, ripples, now)
 
         # Keep only active ripple effects.
