@@ -268,10 +268,14 @@ def draw_active_button_shimmer(screen, rect, now):
         d -= w
         return 0, h - d
 
-    tail = (head - seg_len) % perim
-    p1 = point_at(tail)
-    p2 = point_at(head)
-    pygame.draw.line(overlay, (255, 255, 255, 190), p1, p2, 2)
+    # Draw discrete samples along the perimeter path to avoid diagonal cuts.
+    for j in range(seg_len):
+        d = (head - j) % perim
+        x, y = point_at(d)
+        alpha = clamp(190 - j * 6, 24, 190)
+        overlay.set_at((x, y), (255, 255, 255, alpha))
+        if x + 1 < rect.w:
+            overlay.set_at((x + 1, y), (255, 255, 255, alpha // 2))
     screen.blit(overlay, rect.topleft)
 
 
@@ -385,7 +389,7 @@ def draw_menu_symbol(screen, idx, cx, cy, color):
         draw_logs_symbol(screen, cx, cy, color)
 
 
-def draw_bottom_pulse_strip(screen, t):
+def draw_pulse_strip(screen, t):
     strip = pygame.Rect(14, 12, WIDTH - 28, 14)
     segs = 40
     gap = 2
@@ -524,6 +528,7 @@ def draw_main(screen, fonts, data, selected, current_view, light_on, now):
         draw_placeholder_view(screen, content_rect, fonts, current_view.upper(), now, CYAN if current_view == "bluetooth" else PINK)
         if light_on:
             draw_flashlight_overlay(screen, content_rect)
+        draw_pulse_strip(screen, now)
         return
 
     wifi = pygame.Rect(rx, 54, rw, 130)
@@ -548,7 +553,7 @@ def draw_main(screen, fonts, data, selected, current_view, light_on, now):
     if light_on:
         draw_flashlight_overlay(screen, content_rect)
 
-    draw_bottom_pulse_strip(screen, now)
+    draw_pulse_strip(screen, now)
 
 
 def make_fonts():
