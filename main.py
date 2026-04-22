@@ -9,6 +9,7 @@ No image assets required.
 import math
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -119,9 +120,15 @@ def read_text(path):
 
 def run_command_lines(cmd, timeout=2):
     try:
-        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True, timeout=timeout)
-        return [line.strip() for line in out.splitlines() if line.strip()]
-    except Exception:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        if result.returncode != 0 and result.stderr:
+            print(f"[cmd] {cmd[0]} stderr: {result.stderr.strip()[:120]}")
+        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    except subprocess.TimeoutExpired:
+        print(f"[cmd] {cmd[0]} timed out after {timeout}s")
+        return []
+    except Exception as exc:
+        print(f"[cmd] {cmd[0]} failed: {exc}")
         return []
 
 
@@ -220,28 +227,156 @@ def _bg_scan(target_key, read_fn, data, cache):
     """Run a blocking scan on a background thread and write the result into data."""
     t0 = time.time()
     result = read_fn()
-    print(f"[scan] {target_key}: {result} ({time.time() - t0:.1f}s)")
-    data[target_key] = clamp(result, 0, 999)
+    print(f"[scan] {target_key}: {result if isinstance(result, int) else len(result)} ({time.time() - t0:.1f}s)")
+    if target_key == "wifi" and isinstance(result, list):
+        data["wifi_networks"] = result
+        data["wifi"] = len(result)
+    else:
+        data[target_key] = clamp(result, 0, 999)
     cache[f"{target_key}_scanning"] = False
 
 
-def read_wifi_count():
-    # Force a fresh scan so the result is live, not cached.
-    lines = run_command_lines(["nmcli", "-t", "-f", "SSID", "dev", "wifi", "list", "--rescan", "yes"], timeout=15)
+def _bg_scan_wifi(data, cache):
+    _bg_scan("wifi", read_wifi_networks, data, cache)
+
+
+def _bg_scan_ble(data, cache):
+    t0 = time.time()
+    # Stream bluetoothctl scan output for 10s to capture RSSI alongside device names.
+    # Lines of interest:
+    #   [NEW] Device AA:BB:CC:DD:EE:FF Name
+    #   [CHG] Device AA:BB:CC:DD:EE:FF RSSI: -70
+    names = {}   # mac -> name
+    rssis = {}   # mac -> best (strongest) rssi seen
+    try:
+        proc = subprocess.Popen(
+            ["bluetoothctl", "scan", "on"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, bufsize=1
+        )
+        deadline = time.time() + 10.0
+        while time.time() < deadline:
+            try:
+                line = proc.stdout.readline()
+            except Exception:
+                break
+            if not line:
+                break
+            # Strip ANSI escape codes bluetoothctl emits (e.g. \x1b[0;92m[NEW]\x1b[0m).
+            clean = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', line).strip()
+            # Skip the interactive prompt line (e.g. "[bluetooth]#").
+            if clean.startswith('[bluetooth]') or not clean:
+                continue
+            parts = clean.strip().split(None, 4)
+            # e.g. ['[NEW]', 'Device', 'AA:BB:CC:DD:EE:FF', 'Name']
+            if len(parts) >= 3 and parts[1] == "Device":
+                mac = parts[2]
+                if len(parts) >= 4:
+                    rest = parts[3] if len(parts) == 4 else " ".join(parts[3:])
+                    if rest.startswith("RSSI:"):
+                        try:
+                            rssi = int(rest.split(":", 1)[1].strip())
+                            if mac not in rssis or rssi > rssis[mac]:
+                                rssis[mac] = rssi
+                        except ValueError:
+                            pass
+                    else:
+                        names[mac] = rest
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    except FileNotFoundError:
+        print("[scan] ble: bluetoothctl not found")
+        cache["ble_scanning"] = False
+        return
+    subprocess.run(["bluetoothctl", "scan", "off"],
+                   timeout=3, capture_output=True)
+    # Merge with the static device list (catches pre-cached devices without RSSI).
+    static = read_ble_devices()
+    seen = set(names.keys()) | set(rssis.keys())
+    for (name, mac) in static:
+        if mac not in seen:
+            names[mac] = name
+            seen.add(mac)
+    all_macs = set(names.keys()) | set(rssis.keys())
+    result = []
+    for mac in all_macs:
+        name = names.get(mac, mac)
+        rssi = rssis.get(mac)  # None if no RSSI observed
+        result.append((name, mac, rssi))
+    # Sort by RSSI descending (strongest first); devices with no RSSI go last.
+    result.sort(key=lambda x: (x[2] is None, -(x[2] or 0)))
+    print(f"[scan] ble: {len(result)} ({time.time() - t0:.1f}s)")
+    data["ble_devices"] = result
+    data["ble"] = len(result)
+    cache["ble_scanning"] = False
+
+
+def _wifi_interface():
+    """Return the first wireless interface name found via iw, or 'wlan0'."""
+    lines = run_command_lines(["iw", "dev"])
+    for line in lines:
+        if line.strip().startswith("Interface"):
+            return line.strip().split()[-1]
+    return "wlan0"
+
+
+def read_wifi_networks():
+    """Return list of (ssid, signal_dbm) tuples, best signal per unique SSID."""
+    iface = _wifi_interface()
+    lines = run_command_lines(["iw", "dev", iface, "scan", "dump"], timeout=5)
     if not lines:
-        print("[scan] wifi: nmcli returned no output")
-        return 0
-    unique = {ln for ln in lines if ln}
-    return len(unique)
+        print(f"[scan] wifi: iw scan dump returned no output (iface={iface})")
+        return []
+
+    # Walk the output, pairing each BSS block's signal with its SSID.
+    best = {}  # ssid -> best signal (least negative = strongest)
+    current_signal = None
+    for ln in lines:
+        if "signal:" in ln:
+            try:
+                current_signal = float(ln.split("signal:")[-1].split()[0])
+            except ValueError:
+                pass
+        elif "SSID:" in ln:
+            ssid = ln.split("SSID:", 1)[-1].strip()
+            if ssid and current_signal is not None:
+                if ssid not in best or current_signal > best[ssid]:
+                    best[ssid] = current_signal
+            current_signal = None
+    return sorted(best.items(), key=lambda x: -x[1])  # strongest first
 
 
-def read_ble_count():
-    # Best effort: known bluetooth devices count from bluetoothctl.
+def read_wifi_count():
+    return len(read_wifi_networks())
+
+
+def read_ble_devices():
+    """Read devices discovered by the persistent bluetoothctl scan process.
+    Returns list of (name, mac) tuples sorted alphabetically by name."""
     lines = run_command_lines(["bluetoothctl", "devices"])
     if not lines:
         print("[scan] ble: bluetoothctl returned no output")
-        return 0
-    return len(lines)
+        return []
+    devices = []
+    seen_macs = set()
+    for ln in lines:
+        # Format: "Device AA:BB:CC:DD:EE:FF Name Here"
+        parts = ln.strip().split(None, 2)
+        if len(parts) >= 2 and parts[0] == "Device":
+            mac = parts[1]
+            if mac in seen_macs:
+                continue
+            seen_macs.add(mac)
+            name = parts[2] if len(parts) == 3 else mac
+            devices.append((name, mac))
+    return sorted(devices, key=lambda x: x[0].lower())
+
+
+def read_ble_count():
+    return len(read_ble_devices())
 
 
 def read_uptime_str():
@@ -539,6 +674,91 @@ def draw_cpu_mem_panel(screen, rect, fonts, data, now):
             pygame.draw.line(screen, (36, 43, 73), (x + col_w - S(8), rect.y + S(38)), (x + col_w - S(8), rect.bottom - S(16)), 1)
 
 
+def draw_wifi_view(screen, rect, fonts, data, now):
+    networks = data.get("wifi_networks", [])
+    scanning = data.get("wifi_scanning", False)
+
+    neon_box(screen, rect, PINK, pulse=now + 0.2)
+    draw_scanline_shimmer(screen, rect, now)
+
+    title = "WIFI" + (" \u25cf SCANNING" if scanning and int(now * 4) % 2 == 0 else " \u25a0 SCANNING" if scanning else "")
+    screen.blit(text_surf(fonts["panel_title"], title, PINK if not scanning else BG if int(now * 4) % 2 == 0 else PINK), (rect.x + S(18), rect.y + S(12)))
+
+    if not networks:
+        msg = "\u25cf SCANNING..." if scanning else "NO NETWORKS FOUND"
+        screen.blit(text_surf(fonts["sm"], msg, MUTED), (rect.x + S(18), rect.y + S(56)))
+        return
+
+    # Signal bar helper: -30 dBm = full, -90 dBm = empty.
+    def signal_bars(dbm):
+        frac = clamp((dbm + 90) / 60.0, 0.0, 1.0)
+        filled = int(round(frac * 5))
+        return "".join("\u2588" if i < filled else "\u2591" for i in range(5))
+
+    row_h = S(28)
+    max_rows = max(1, (rect.h - S(48)) // row_h)
+    visible = networks[:max_rows]
+
+    for idx, (ssid, dbm) in enumerate(visible):
+        y = rect.y + S(48) + idx * row_h
+        bars = signal_bars(dbm)
+        bar_color = PINK if dbm >= -65 else CYAN if dbm >= -75 else MUTED
+        screen.blit(text_surf(fonts["tiny"], bars, bar_color), (rect.x + S(12), y))
+        bar_surf_w = fonts["tiny"].size(bars)[0]
+        screen.blit(text_surf(fonts["tiny"], f" {ssid}", TEXT), (rect.x + S(12) + bar_surf_w, y))
+        screen.blit(text_surf(fonts["tiny"], f"{int(dbm)}dBm", MUTED), (rect.right - S(72), y))
+
+    if len(networks) > max_rows:
+        screen.blit(text_surf(fonts["tiny"], f"+{len(networks) - max_rows} more", MUTED), (rect.x + S(18), rect.bottom - S(20)))
+
+
+def draw_ble_view(screen, rect, fonts, data, now):
+    devices = data.get("ble_devices", [])  # list of (name, mac, rssi_or_None)
+    scanning = data.get("ble_scanning", False)
+
+    neon_box(screen, rect, CYAN, pulse=now + 0.6)
+    draw_scanline_shimmer(screen, rect, now)
+
+    title = "BLUETOOTH" + (" \u25cf SCANNING" if scanning and int(now * 4) % 2 == 0 else " \u25a0 SCANNING" if scanning else "")
+    screen.blit(text_surf(fonts["panel_title"], title, CYAN if not scanning else BG if int(now * 4) % 2 == 0 else CYAN), (rect.x + S(18), rect.y + S(12)))
+
+    if not devices:
+        msg = "\u25cf SCANNING..." if scanning else "NO DEVICES FOUND"
+        screen.blit(text_surf(fonts["sm"], msg, MUTED), (rect.x + S(18), rect.y + S(56)))
+        return
+
+    # Signal bar helper: -40 dBm = full, -100 dBm = empty (BLE typical range).
+    def signal_bars(rssi):
+        if rssi is None:
+            return "\u2591" * 5
+        frac = clamp((rssi + 100) / 60.0, 0.0, 1.0)
+        filled = int(round(frac * 5))
+        return "".join("\u2588" if i < filled else "\u2591" for i in range(5))
+
+    def bar_color(rssi):
+        if rssi is None:
+            return MUTED
+        return CYAN if rssi >= -70 else PINK if rssi >= -85 else MUTED
+
+    row_h = S(28)
+    max_rows = max(1, (rect.h - S(48)) // row_h)
+    visible = devices[:max_rows]
+
+    for idx, entry in enumerate(visible):
+        name, mac, rssi = entry if len(entry) == 3 else (entry[0], entry[1], None)
+        y = rect.y + S(48) + idx * row_h
+        bars = signal_bars(rssi)
+        bc = bar_color(rssi)
+        screen.blit(text_surf(fonts["tiny"], bars, bc), (rect.x + S(12), y))
+        bar_w = fonts["tiny"].size(bars)[0]
+        screen.blit(text_surf(fonts["tiny"], f" {name}", TEXT), (rect.x + S(12) + bar_w, y))
+        rssi_str = f"{rssi}dBm" if rssi is not None else "?"
+        screen.blit(text_surf(fonts["tiny"], rssi_str, MUTED), (rect.right - fonts["tiny"].size(rssi_str)[0] - S(12), y))
+
+    if len(devices) > max_rows:
+        screen.blit(text_surf(fonts["tiny"], f"+{len(devices) - max_rows} more", MUTED), (rect.x + S(18), rect.bottom - S(20)))
+
+
 def draw_placeholder_view(screen, rect, fonts, title, now, color):
     neon_box(screen, rect, color, pulse=now + 2.5)
     draw_scanline_shimmer(screen, rect, now)
@@ -592,7 +812,12 @@ def draw_main(screen, fonts, data, selected, current_view, light_on, now):
     content_rect = pygame.Rect(rx, S(54), rw, HEIGHT - S(68))
 
     if current_view != "home":
-        draw_placeholder_view(screen, content_rect, fonts, current_view.upper(), now, CYAN if current_view == "bluetooth" else PINK)
+        if current_view == "wifi":
+            draw_wifi_view(screen, content_rect, fonts, data, now)
+        elif current_view == "bluetooth":
+            draw_ble_view(screen, content_rect, fonts, data, now)
+        else:
+            draw_placeholder_view(screen, content_rect, fonts, current_view.upper(), now, VIOLET)
         if light_on:
             draw_flashlight_overlay(screen, content_rect)
         draw_pulse_strip(screen, now)
@@ -710,14 +935,14 @@ def update_data(data, cache, start_time, now):
             cache["wifi_scanning"] = True
             cache["wifi_scan_started"] = now
             cache["wifi_refresh_at"] = now
-            threading.Thread(target=_bg_scan, args=("wifi", read_wifi_count, data, cache), daemon=True).start()
+            threading.Thread(target=_bg_scan_wifi, args=(data, cache), daemon=True).start()
 
     if now - cache.get("ble_refresh_at", -scan_intervals["ble_seconds"]) >= scan_intervals["ble_seconds"]:
         if not cache.get("ble_scanning", False):
             cache["ble_scanning"] = True
             cache["ble_scan_started"] = now
             cache["ble_refresh_at"] = now
-            threading.Thread(target=_bg_scan, args=("ble", read_ble_count, data, cache), daemon=True).start()
+            threading.Thread(target=_bg_scan_ble, args=(data, cache), daemon=True).start()
 
     data["wifi_scanning"] = cache.get("wifi_scanning", False)
     data["ble_scanning"] = cache.get("ble_scanning", False)
@@ -772,6 +997,8 @@ def main():
         "uptime": "0:00:00",
         "wifi_scanning": False,
         "ble_scanning": False,
+        "wifi_networks": [],
+        "ble_devices": [],
     }
     # Stagger BLE scan by half its interval after WiFi (WiFi fires immediately at t=0).
     _wifi_secs = CONFIG["scan_intervals"]["wifi_seconds"]
