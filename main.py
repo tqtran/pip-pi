@@ -34,11 +34,17 @@ def S(n):
 FPS = 30
 RIPPLE_LIFE = 0.45
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pip-pi.config.json")
+BLE_NAME_CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ble-name-cache.json")
 
 DEFAULT_CONFIG = {
     "scan_intervals": {
         "ble_seconds": 60.0,
         "wifi_seconds": 60.0,
+    },
+    "scan_behavior": {
+        "ble_first_window_seconds": 60.0,
+        "ble_window_seconds": 15.0,
+        "ble_stagger_seconds": 30.0,
     },
     "refresh_intervals": {
         "load_seconds": 5.0,
@@ -52,6 +58,11 @@ def clone_default_config():
         "scan_intervals": {
             "ble_seconds": DEFAULT_CONFIG["scan_intervals"]["ble_seconds"],
             "wifi_seconds": DEFAULT_CONFIG["scan_intervals"]["wifi_seconds"],
+        },
+        "scan_behavior": {
+            "ble_first_window_seconds": DEFAULT_CONFIG["scan_behavior"]["ble_first_window_seconds"],
+            "ble_window_seconds": DEFAULT_CONFIG["scan_behavior"]["ble_window_seconds"],
+            "ble_stagger_seconds": DEFAULT_CONFIG["scan_behavior"]["ble_stagger_seconds"],
         },
         "refresh_intervals": {
             "load_seconds": DEFAULT_CONFIG["refresh_intervals"]["load_seconds"],
@@ -86,6 +97,44 @@ def load_config():
 
 
 CONFIG = load_config()
+
+
+def load_ble_name_cache():
+    try:
+        if os.path.exists(BLE_NAME_CACHE_PATH):
+            with open(BLE_NAME_CACHE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                # Keep only string->string entries.
+                return {str(k): str(v) for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
+    except Exception as exc:
+        print(f"[ble-cache] failed to load {BLE_NAME_CACHE_PATH}: {exc}")
+    return {}
+
+
+def save_ble_name_cache(cache_map):
+    try:
+        with open(BLE_NAME_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump(cache_map, f, indent=2, sort_keys=True)
+    except Exception as exc:
+        print(f"[ble-cache] failed to save {BLE_NAME_CACHE_PATH}: {exc}")
+
+
+def valid_ble_name(name, mac):
+    if not name:
+        return False
+    n = name.strip()
+    if not n:
+        return False
+    if n.lower() in {"unknown", "(unknown)", "n/a", "none"}:
+        return False
+    if n.upper() == mac.upper():
+        return False
+    return True
+
+
+BLE_NAME_CACHE = load_ble_name_cache()
+BLE_NAME_CACHE_LOCK = threading.Lock()
 
 BG = (4, 6, 16)
 PANEL_BG = (8, 10, 24)
@@ -241,7 +290,7 @@ def _bg_scan_wifi(data, cache):
     _bg_scan("wifi", read_wifi_networks, data, cache)
 
 
-def _bg_scan_ble(data, cache):
+def _bg_scan_ble(data, cache, scan_window_seconds):
     t0 = time.time()
     # Lines of interest from bluetoothctl:
     #   [NEW] Device AA:BB:CC:DD:EE:FF Name
@@ -266,7 +315,7 @@ def _bg_scan_ble(data, cache):
                 pass
         threading.Thread(target=_feeder, args=(proc.stdout, line_q), daemon=True).start()
 
-        deadline = time.time() + 10.0
+        deadline = time.time() + max(1.0, float(scan_window_seconds))
         while time.time() < deadline:
             try:
                 line = line_q.get(timeout=0.25)
@@ -282,7 +331,7 @@ def _bg_scan_ble(data, cache):
             if len(parts) >= 3 and parts[1] == "Device":
                 mac = parts[2]
                 if len(parts) >= 4:
-                    rest = " ".join(parts[3:])
+                    rest = " ".join(parts[3:]).strip()
                     if rest.startswith("RSSI:"):
                         try:
                             rssi = int(rest.split(":", 1)[1].strip())
@@ -290,7 +339,13 @@ def _bg_scan_ble(data, cache):
                                 rssis[mac] = rssi
                         except ValueError:
                             pass
-                    else:
+                    elif rest.startswith("Name:") or rest.startswith("Alias:"):
+                        # Prefer explicit bluetoothctl name/alias fields.
+                        candidate = rest.split(":", 1)[1].strip()
+                        if candidate:
+                            names[mac] = candidate
+                    elif ":" not in rest:
+                        # Treat colon-less trailing text as a plain device name.
                         names[mac] = rest
     except FileNotFoundError:
         print("[scan] ble: bluetoothctl not found")
@@ -312,8 +367,26 @@ def _bg_scan_ble(data, cache):
                 names[mac] = name
         all_macs = set(names.keys()) | set(rssis.keys())
         result = []
+        cache_changed = False
         for mac in all_macs:
-            name = names.get(mac, mac)
+            name = names.get(mac, "").strip()
+
+            # Persist newly discovered good names.
+            if valid_ble_name(name, mac):
+                with BLE_NAME_CACHE_LOCK:
+                    if BLE_NAME_CACHE.get(mac) != name:
+                        BLE_NAME_CACHE[mac] = name
+                        cache_changed = True
+
+            # Reuse cached name when current scan has no usable name.
+            if not valid_ble_name(name, mac):
+                with BLE_NAME_CACHE_LOCK:
+                    cached_name = BLE_NAME_CACHE.get(mac)
+                if valid_ble_name(cached_name, mac):
+                    name = cached_name
+                else:
+                    name = mac
+
             rssi = rssis.get(mac)
             result.append((name, mac, rssi))
         result.sort(key=lambda x: (x[2] is None, -(x[2] or 0)))
@@ -321,6 +394,9 @@ def _bg_scan_ble(data, cache):
         data["ble_devices"] = result
         data["ble"] = len(result)
         cache["ble_scanning"] = False
+        if cache_changed:
+            with BLE_NAME_CACHE_LOCK:
+                save_ble_name_cache(BLE_NAME_CACHE)
 
 
 def _wifi_interface():
@@ -379,7 +455,11 @@ def read_ble_devices():
             if mac in seen_macs:
                 continue
             seen_macs.add(mac)
-            name = parts[2] if len(parts) == 3 else mac
+            name = parts[2] if len(parts) == 3 else ""
+            if not valid_ble_name(name, mac):
+                with BLE_NAME_CACHE_LOCK:
+                    cached_name = BLE_NAME_CACHE.get(mac)
+                name = cached_name if valid_ble_name(cached_name, mac) else mac
             devices.append((name, mac))
     return sorted(devices, key=lambda x: x[0].lower())
 
@@ -777,7 +857,7 @@ def draw_ble_view(screen, rect, fonts, data, now):
         if name_surf.get_width() > name_max_w:
             name_surf = name_surf.subsurface((0, 0, name_max_w, name_surf.get_height()))
         screen.blit(name_surf, (bx + bar_col_w, y))
-        rssi_str = f"{rssi}dBm" if rssi is not None else "?"
+        rssi_str = f"{rssi}dBm" if rssi is not None else ""
         screen.blit(text_surf(fonts["list_item"], rssi_str, MUTED), (rect.right - dbm_col_w, y))
 
     if len(devices) > max_rows:
@@ -935,10 +1015,17 @@ def make_fonts():
 
 
 def update_data(data, cache, start_time, now):
-    intervals = CONFIG["refresh_intervals"]
-    scan_intervals = CONFIG["scan_intervals"]
+    intervals = CONFIG.get("refresh_intervals", {})
+    scan_intervals = CONFIG.get("scan_intervals", {})
+    scan_behavior = CONFIG.get("scan_behavior", {})
+    load_seconds = float(intervals.get("load_seconds", DEFAULT_CONFIG["refresh_intervals"]["load_seconds"]))
+    stats_seconds = float(intervals.get("stats_seconds", DEFAULT_CONFIG["refresh_intervals"]["stats_seconds"]))
+    wifi_seconds = float(scan_intervals.get("wifi_seconds", DEFAULT_CONFIG["scan_intervals"]["wifi_seconds"]))
+    ble_seconds = float(scan_intervals.get("ble_seconds", DEFAULT_CONFIG["scan_intervals"]["ble_seconds"]))
+    ble_first_window = float(scan_behavior.get("ble_first_window_seconds", DEFAULT_CONFIG["scan_behavior"]["ble_first_window_seconds"]))
+    ble_next_window = float(scan_behavior.get("ble_window_seconds", DEFAULT_CONFIG["scan_behavior"]["ble_window_seconds"]))
 
-    if now - cache.get("load_refresh_at", -intervals["load_seconds"]) >= intervals["load_seconds"]:
+    if now - cache.get("load_refresh_at", -load_seconds) >= load_seconds:
         cpu = read_cpu_percent(cache)
         mem = read_mem_percent()
         if cpu is not None:
@@ -947,7 +1034,7 @@ def update_data(data, cache, start_time, now):
             data["mem"] = mem
         cache["load_refresh_at"] = now
 
-    if now - cache.get("stats_refresh_at", -intervals["stats_seconds"]) >= intervals["stats_seconds"]:
+    if now - cache.get("stats_refresh_at", -stats_seconds) >= stats_seconds:
         store = read_storage_percent()
         temp_c = read_temp_c()
         if store is not None:
@@ -956,19 +1043,22 @@ def update_data(data, cache, start_time, now):
             data["temp"] = clamp(temp_c, -40.0, 140.0)
         cache["stats_refresh_at"] = now
 
-    if now - cache.get("wifi_refresh_at", -scan_intervals["wifi_seconds"]) >= scan_intervals["wifi_seconds"]:
+    if now - cache.get("wifi_refresh_at", -wifi_seconds) >= wifi_seconds:
         if not cache.get("wifi_scanning", False):
             cache["wifi_scanning"] = True
             cache["wifi_scan_started"] = now
             cache["wifi_refresh_at"] = now
             threading.Thread(target=_bg_scan_wifi, args=(data, cache), daemon=True).start()
 
-    if now - cache.get("ble_refresh_at", -scan_intervals["ble_seconds"]) >= scan_intervals["ble_seconds"]:
+    if now - cache.get("ble_refresh_at", -ble_seconds) >= ble_seconds:
         if not cache.get("ble_scanning", False):
+            ble_scan_count = int(cache.get("ble_scan_count", 0))
+            ble_window = ble_first_window if ble_scan_count == 0 else ble_next_window
             cache["ble_scanning"] = True
             cache["ble_scan_started"] = now
             cache["ble_refresh_at"] = now
-            threading.Thread(target=_bg_scan_ble, args=(data, cache), daemon=True).start()
+            cache["ble_scan_count"] = ble_scan_count + 1
+            threading.Thread(target=_bg_scan_ble, args=(data, cache, ble_window), daemon=True).start()
 
     data["wifi_scanning"] = cache.get("wifi_scanning", False)
     data["ble_scanning"] = cache.get("ble_scanning", False)
@@ -1027,12 +1117,15 @@ def main():
         "ble_devices": [],
     }
     # Stagger BLE scan by half its interval after WiFi (WiFi fires immediately at t=0).
-    _wifi_secs = CONFIG["scan_intervals"]["wifi_seconds"]
-    _ble_secs = CONFIG["scan_intervals"]["ble_seconds"]
+    _scan_intervals = CONFIG.get("scan_intervals", {})
+    _scan_behavior = CONFIG.get("scan_behavior", {})
+    _wifi_secs = float(_scan_intervals.get("wifi_seconds", DEFAULT_CONFIG["scan_intervals"]["wifi_seconds"]))
+    _ble_secs = float(_scan_intervals.get("ble_seconds", DEFAULT_CONFIG["scan_intervals"]["ble_seconds"]))
+    _ble_stagger = float(_scan_behavior.get("ble_stagger_seconds", DEFAULT_CONFIG["scan_behavior"]["ble_stagger_seconds"]))
     _now = time.time()
     cache = {
         "wifi_refresh_at": _now - _wifi_secs,       # fires immediately
-        "ble_refresh_at": _now - _ble_secs / 2.0,   # fires half-interval later
+        "ble_refresh_at": _now - _ble_secs + _ble_stagger,   # fires after stagger delay
     }
     ripples = []
 

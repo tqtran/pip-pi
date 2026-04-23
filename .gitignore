@@ -8,3 +8,4 @@ dist/
 build/
 .env
 pip-pi.config.json
+ble-name-cache.json
