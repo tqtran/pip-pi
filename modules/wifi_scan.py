@@ -25,41 +25,47 @@ def _wifi_interface():
             return line.strip().split()[-1]
     return "wlan0"
 
-
 def _parse_security(block_lines):
-    """Derive security string from a single BSS block (lines already stripped)."""
+    """Derive security string from a single BSS block."""
     has_rsn = False
     has_wpa = False
     has_privacy = False
-    akm = set()
+    akm_text = ""
     in_rsn = False
 
     for ln in block_lines:
-        low = ln.lower()
+        low = ln.lower().strip()
+
         if low.startswith("capability:"):
             has_privacy = "privacy" in low
-        elif low == "rsn:":
+
+        elif low.startswith("rsn:"):
             has_rsn = True
             in_rsn = True
+
         elif low.startswith("wpa:"):
             has_wpa = True
             in_rsn = False
+
         elif low.endswith(":") and not low.startswith("*"):
-            in_rsn = False  # entering a different subsection
+            in_rsn = False
 
         if in_rsn and ("authentication suites:" in low or "akm suites:" in low):
-            rest = ln.split(":", 1)[-1].strip().upper()
-            for token in rest.split():
-                akm.add(token)
+            akm_text += " " + ln.split(":", 1)[-1].strip().upper()
 
     if has_rsn:
-        has_sae = "SAE" in akm
-        has_psk = "PSK" in akm
+        has_sae = "SAE" in akm_text
+        has_psk = "PSK" in akm_text
+        has_8021x = "802.1X" in akm_text or "IEEE" in akm_text
+
         if has_sae and has_psk:
             return "WPA2/WPA3"
         if has_sae:
             return "WPA3"
+        if has_8021x:
+            return "WPA2-ENT"
         return "WPA2"
+
     if has_wpa:
         return "WPA"
     if has_privacy:
