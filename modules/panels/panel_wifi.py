@@ -98,7 +98,7 @@ def panel_wifi(screen, rect, fonts, data, now, *, neon_box, draw_scanline_shimme
     name_max_w = rect.w - S(24) - bar_col_w - dbm_col_w
 
     for idx, entry in enumerate(visible):
-        name, dbm = entry
+        name, dbm, security = entry[0], entry[1], entry[2] if len(entry) > 2 else ""
         y = row_top + idx * row_h
         row_rect = pygame.Rect(rect.x + S(10), y, rect.w - S(20), row_h - S(2))
         pygame.draw.rect(screen, (12, 14, 30), row_rect, border_radius=S(4))
@@ -120,3 +120,7 @@ def panel_wifi(screen, rect, fonts, data, now, *, neon_box, draw_scanline_shimme
 
         dbm_str = f"{int(dbm)}dBm" if dbm is not None else ""
         screen.blit(text_surf(fonts["list_item"], dbm_str, MUTED), (rect.right - dbm_col_w, y + S(4)))
+
+        if security:
+            sec_color = CYAN if security in ("WPA3", "WPA2/WPA3") else PINK if security == "WPA2" else MUTED
+            screen.blit(text_surf(fonts["sm"], security, sec_color), (bx + bar_col_w, y + S(32)))
