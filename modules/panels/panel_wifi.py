@@ -38,6 +38,7 @@ def panel_wifi(screen, rect, fonts, data, now, *, neon_box, draw_scanline_shimme
     CYAN = colors["CYAN"]
     BG = colors["BG"]
     MUTED = colors["MUTED"]
+    TEXT = colors["TEXT"]
 
     networks = data.get("wifi_networks", [])
     scanning = data.get("wifi_scanning", False)
@@ -105,7 +106,10 @@ def panel_wifi(screen, rect, fonts, data, now, *, neon_box, draw_scanline_shimme
     visible = networks[:max_rows]
 
     dbm_col_w = fonts["list_item"].size("-100dBm")[0] + S(8)
-    bar_col_w = fonts["list_item"].size("█" * 5)[0] + S(6)
+    bar_w = max(2, S(9))
+    bar_h = max(2, S(14))
+    bar_gap = max(1, S(2))
+    bar_col_w = (bar_w * 5) + (bar_gap * 4) + S(6)
     name_max_w = rect.w - S(24) - bar_col_w - dbm_col_w
 
     for idx, entry in enumerate(visible):
@@ -116,10 +120,13 @@ def panel_wifi(screen, rect, fonts, data, now, *, neon_box, draw_scanline_shimme
         if idx % 2 == 0:
             pygame.draw.rect(screen, (26, 30, 52), row_rect, 1, border_radius=S(4))
 
-        bars = "".join("█" if i < max(0, min(5, int(round((_signal_quality(dbm) / 100) * 5)))) else "░" for i in range(5))
+        bars_on = max(0, min(5, int(round((_signal_quality(dbm) / 100) * 5))))
         bc = PINK if dbm >= -65 else CYAN if dbm >= -75 else MUTED
         bx = rect.x + S(16)
-        screen.blit(text_surf(fonts["list_item"], bars, bc), (bx, y + S(4)))
+        by = y + S(12)
+        for bi in range(5):
+            bar_color = bc if bi < bars_on else (28, 34, 62)
+            pygame.draw.rect(screen, bar_color, (bx + bi * (bar_w + bar_gap), by, bar_w, bar_h), border_radius=2)
 
         name_surf = fonts["list_item"].render(f" {name}", True, TEXT)
         if name_surf.get_width() > name_max_w:

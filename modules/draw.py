@@ -307,7 +307,7 @@ def draw_main(screen, fonts, data, selected, current_view, light_on, now, config
                 text_surf=text_surf,
                 draw_signal_list_rows=draw_signal_list_rows,
                 S=S,
-                colors={"PINK": PINK, "CYAN": CYAN, "BG": BG, "MUTED": MUTED},
+                colors={"PINK": PINK, "CYAN": CYAN, "BG": BG, "MUTED": MUTED, "TEXT": TEXT},
             )
         elif current_view == "bluetooth":
             panel_bluetooth(
