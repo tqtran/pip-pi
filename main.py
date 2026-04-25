@@ -14,7 +14,7 @@ import pygame
 
 # When running as root (sudo), DISPLAY and XAUTHORITY are often stripped.
 # Restore them so pygame can find the display.
-if os.geteuid() == 0:
+if hasattr(os, "geteuid") and os.geteuid() == 0:
     if not os.environ.get("DISPLAY"):
         os.environ.setdefault("DISPLAY", ":0")
     if not os.environ.get("XAUTHORITY"):

