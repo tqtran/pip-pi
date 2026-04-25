@@ -77,6 +77,9 @@ def main():
         "ble_scanning": False,
         "wifi_networks": [],
         "ble_devices": [],
+        "wifi_selected_idx": None,
+        "wifi_deauth_msg": "",
+        "wifi_deauth_at": 0.0,
     }
 
     _scan_intervals = CONFIG.get("scan_intervals", {})
@@ -99,6 +102,7 @@ def main():
             light_on=light_on,
             click_sound=click_sound,
             ripples=ripples,
+            data=data,
         )
 
         now = time.time()
