@@ -58,6 +58,7 @@ def panel_home(screen, rect, fonts, data, now, config, *, neon_box, draw_wire_gr
     PINK = colors["PINK"]
     CYAN = colors["CYAN"]
     BG = colors["BG"]
+    WHITE = (255, 255, 255)
 
     wifi_scanning = data.get("wifi_scanning", False)
     ble_scanning = data.get("ble_scanning", False)
@@ -80,10 +81,10 @@ def panel_home(screen, rect, fonts, data, now, config, *, neon_box, draw_wire_gr
     if wifi_scanning:
         left_half = pygame.Rect(rect.x + 2, rect.y + 2, split_x - rect.x - 3, rect.h - 4)
         pygame.draw.rect(screen, PINK, left_half, border_radius=S(6))
-        scan_text = "WIFI SCANNING" if int(now * 4) % 2 == 0 else "WIFI ..."
+        scan_text = "WIFI SCANNING ..."
         wifi_font = _fit_font(fonts, scan_text, left_max_w, font_keys)
-        wifi_surf = text_surf(wifi_font, scan_text, BG)
-        wifi_y = left_clip.centery - wifi_surf.get_height() // 2
+        wifi_surf = text_surf(wifi_font, scan_text, WHITE)
+        wifi_y = left_clip.y + S(12)
         _blit_clipped(screen, wifi_surf, (left_text_x, wifi_y), left_clip)
     else:
         wifi_label = "WIFI"
@@ -97,16 +98,16 @@ def panel_home(screen, rect, fonts, data, now, config, *, neon_box, draw_wire_gr
             left_text_x,
             left_clip,
             text_surf=text_surf,
-            y_center=left_clip.centery,
+            y_center=left_clip.y + S(24),
         )
 
     if ble_scanning:
         right_half = pygame.Rect(split_x + 1, rect.y + 2, rect.right - split_x - 3, rect.h - 4)
         pygame.draw.rect(screen, CYAN, right_half, border_radius=S(6))
-        scan_text = "BLE SCANNING" if int(now * 4) % 2 == 0 else "BLE ..."
+        scan_text = "BLE SCANNING ..."
         ble_font = _fit_font(fonts, scan_text, right_max_w, font_keys)
-        ble_surf = text_surf(ble_font, scan_text, BG)
-        ble_y = right_clip.centery - ble_surf.get_height() // 2
+        ble_surf = text_surf(ble_font, scan_text, WHITE)
+        ble_y = right_clip.y + S(12)
         _blit_clipped(screen, ble_surf, (right_text_x, ble_y), right_clip)
     else:
         ble_label = "BLE"
@@ -120,7 +121,7 @@ def panel_home(screen, rect, fonts, data, now, config, *, neon_box, draw_wire_gr
             right_text_x,
             right_clip,
             text_surf=text_surf,
-            y_center=right_clip.centery,
+            y_center=right_clip.y + S(24),
         )
 
     bar_h = max(2, S(4))
