@@ -92,6 +92,7 @@ def main():
         "wifi_deauth_screen": False,
         "wifi_deauth_msg": "",
         "wifi_deauth_at": 0.0,
+        "current_view": "home",
     }
 
     _scan_intervals = CONFIG.get("scan_intervals", {})
@@ -118,6 +119,7 @@ def main():
         )
 
         now = time.time()
+        data["current_view"] = current_view
         update_data(data, cache, start, now, CONFIG)
         draw_frame(screen, fonts, data, selected, current_view, light_on, now, CONFIG, ripples)
 
