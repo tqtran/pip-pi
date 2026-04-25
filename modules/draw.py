@@ -266,9 +266,6 @@ def draw_main(screen, fonts, data, selected, current_view, light_on, now, config
     pygame.draw.line(screen, (20, 35, 60), (top.x, top.bottom), (top.right, top.bottom), 1)
 
     # --- status bar ---
-    clock_text = text_surf(fonts["clock"], data["clock"], PINK)
-    clock_w = clock_text.get_width() + S(10)
-    screen.blit(clock_text, (top.right - clock_w, top.y + (top.h - clock_text.get_height()) // 2))
 
     status_msg = data.get("status_msg", "")
     status_at  = data.get("status_msg_at", 0.0)

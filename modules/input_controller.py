@@ -11,7 +11,80 @@ from modules.panels.panel_config import config_click_action
 from modules.panels.panel_wifi_deauth import begin_deauth, stop_deauth
 from modules.panels.panel_wifi import wifi_click_action
 from modules.sound_manager import play_click
-from modules.thread_control import request_shutdown
+from modules.thread_control import request_shutdown, start_managed_thread
+
+
+def _summarize_git_pull(returncode, output):
+    text = (output or "").strip()
+    low = text.lower()
+
+    if "already up to date" in low or "already up-to-date" in low:
+        return "Update: already up to date"
+
+    if returncode == 0:
+        if "fast-forward" in low or "updating " in low or "files changed" in low:
+            return "Update complete: pulled latest changes"
+        return "Update complete"
+
+    if "conflict" in low or "merge conflict" in low:
+        return "Update failed: merge conflict"
+    if "could not resolve host" in low:
+        return "Update failed: network/host error"
+    if "not a git repository" in low:
+        return "Update failed: not a git repo"
+    if "permission denied" in low:
+        return "Update failed: permission denied"
+    if "authentication failed" in low:
+        return "Update failed: authentication"
+
+    first = text.splitlines()[0].strip() if text else "unknown error"
+    return f"Update failed: {first[:60]}"
+
+
+def _run_git_pull_async(data):
+    if data is None:
+        return
+
+    if data.get("update_running", False):
+        data["status_msg"] = "Update already running..."
+        data["status_msg_at"] = time.time()
+        return
+
+    data["update_running"] = True
+    data["status_msg"] = "Running git pull..."
+    data["status_msg_at"] = time.time()
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    git_cmd = ["git", "-C", repo_root, "pull"]
+    cmd_candidates = [git_cmd] if os.name == "nt" else [["sudo"] + git_cmd, git_cmd]
+
+    def _worker():
+        try:
+            output = ""
+            rc = 1
+
+            for cmd in cmd_candidates:
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    output = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
+                    rc = int(result.returncode)
+                    break
+                except FileNotFoundError:
+                    continue
+
+            data["status_msg"] = _summarize_git_pull(rc, output)
+            data["status_msg_at"] = time.time()
+        except Exception as exc:
+            data["status_msg"] = f"Update failed: {str(exc)[:60]}"
+            data["status_msg_at"] = time.time()
+        finally:
+            data["update_running"] = False
+
+    worker = start_managed_thread("git-pull-update", _worker, daemon=True)
+    if worker is None:
+        data["update_running"] = False
+        data["status_msg"] = "Update skipped: app is shutting down"
+        data["status_msg_at"] = time.time()
 
 
 def _apply_menu_selection(mx, my, selected, current_view, light_on):
@@ -117,15 +190,7 @@ def handle_input(selected, current_view, light_on, click_sound, ripples, data=No
                             data["status_msg"] = "Fullscreen ON" if is_fs else "Fullscreen OFF"
                             data["status_msg_at"] = time.time()
                     elif action == "update":
-                        subprocess.Popen(
-                            ["sudo", "git", "-C",
-                             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                             "pull"],
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                        )
-                        if data is not None:
-                            data["status_msg"] = "Running git pull..."
-                            data["status_msg_at"] = time.time()
+                        _run_git_pull_async(data)
                     elif action == "restart":
                         if data is not None:
                             data["status_msg"] = "Restarting..."
