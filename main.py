@@ -2,14 +2,25 @@
 """
 pip-pi dashboard prototype.
 
-Reference-inspired neon layout using rectangles, lines, and text only.
-No image assets required.
+Simple layout using rectangles, lines, and text only.
+Base resolution is 800x480, but it should scale up on larger displays. Tested on Raspberry Pi OS with pygame 2.1.2.
 """
 
+import os
 import sys
 import time
 
 import pygame
+
+# When running as root (sudo), DISPLAY and XAUTHORITY are often stripped.
+# Restore them so pygame can find the display.
+if os.geteuid() == 0:
+    if not os.environ.get("DISPLAY"):
+        os.environ.setdefault("DISPLAY", ":0")
+    if not os.environ.get("XAUTHORITY"):
+        _xauth = os.path.expanduser("~pi/.Xauthority")
+        if os.path.exists(_xauth):
+            os.environ["XAUTHORITY"] = _xauth
 from modules.app_config import CONFIG, DEFAULT_CONFIG
 from modules.draw import BASE_H, BASE_W, RIPPLE_LIFE, TEXT, configure_layout, draw_frame, make_fonts
 from modules.input_controller import handle_input
