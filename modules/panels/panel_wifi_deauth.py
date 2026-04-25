@@ -20,12 +20,17 @@ def begin_deauth(ap_mac, target_mac, interface):
     global _WORKER_STARTED, _WORKER_STOP_EVENT, _WORKER_THREAD
 
     with _WORKER_LOCK:
-        if _WORKER_STARTED:
-            _push_status("simulation already running")
-            return False
+        # Stop any running worker before starting a new one
+        if _WORKER_STARTED and _WORKER_STOP_EVENT is not None:
+            _WORKER_STOP_EVENT.set()
+            _WORKER_STARTED = False
         stop_event = threading.Event()
         _WORKER_STOP_EVENT = stop_event
         _WORKER_STARTED = True
+
+    # Clear old status lines so the new session starts clean
+    with _STATUS_LOCK:
+        _STATUS_LINES.clear()
 
     def _worker():
         try:
