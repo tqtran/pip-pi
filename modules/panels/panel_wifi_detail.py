@@ -100,13 +100,13 @@ def render_wifi_detail(screen, rect, fonts, selected_entry, now, *, text_surf, S
     screen.blit(text_surf(fonts["sm"], "SIGNAL", MUTED), (rect.x + S(18), stats_y))
     screen.blit(text_surf(fonts["panel_title"], f"{int(dbm)} dBm", PINK if dbm >= -70 else CYAN), (rect.x + S(18), stats_y + S(24)))
 
-    screen.blit(text_surf(fonts["sm"], "QUALITY", MUTED), (rect.x + S(260), stats_y))
-    screen.blit(text_surf(fonts["panel_title"], f"{quality}%", CYAN), (rect.x + S(260), stats_y + S(24)))
+    screen.blit(text_surf(fonts["sm"], "QUALITY", MUTED), (rect.x + S(180), stats_y))
+    screen.blit(text_surf(fonts["panel_title"], f"{quality}%", CYAN), (rect.x + S(180), stats_y + S(24)))
 
     if security:
         sec_color = CYAN if security in ("WPA3", "WPA2/WPA3") else PINK if security == "WPA2" else MUTED
-        screen.blit(text_surf(fonts["sm"], "SECURITY", MUTED), (rect.x + S(420), stats_y))
-        screen.blit(text_surf(fonts["panel_title"], security, sec_color), (rect.x + S(420), stats_y + S(24)))
+        screen.blit(text_surf(fonts["sm"], "SECURITY", MUTED), (rect.x + S(340), stats_y))
+        screen.blit(text_surf(fonts["panel_title"], security, sec_color), (rect.x + S(340), stats_y + S(24)))
 
     deauth_rect = pygame.Rect(rect.right - S(210), rect.bottom - S(66), S(190), S(44))
     pygame.draw.rect(screen, (52, 10, 24), deauth_rect, border_radius=S(6))
