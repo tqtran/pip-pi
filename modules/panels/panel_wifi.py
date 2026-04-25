@@ -1,5 +1,7 @@
 import pygame
 
+from modules.panels.panel_wifi_detail import render_wifi_detail, wifi_detail_click_action
+
 
 def _signal_quality(dbm):
     if dbm is None:
@@ -13,13 +15,7 @@ def wifi_click_action(mx, my, rect, data, S):
     selected_present = selected_ssid is not None and any(str(n[0]) == str(selected_ssid) for n in networks)
 
     if selected_present:
-        back_rect = pygame.Rect(rect.x + S(18), rect.bottom - S(66), S(140), S(44))
-        deauth_rect = pygame.Rect(rect.right - S(210), rect.bottom - S(66), S(190), S(44))
-        if back_rect.collidepoint(mx, my):
-            return "back", None
-        if deauth_rect.collidepoint(mx, my):
-            return "deauth", str(selected_ssid)
-        return None, None
+        return wifi_detail_click_action(mx, my, rect, selected_ssid, S)
 
     row_h = S(56)
     row_top = rect.y + S(48)
@@ -74,38 +70,16 @@ def panel_wifi(screen, rect, fonts, data, now, *, neon_box, draw_scanline_shimme
         return
 
     if selected_entry is not None:
-        ssid, dbm = selected_entry
-        quality = _signal_quality(dbm)
-
-        back_rect = pygame.Rect(rect.x + S(18), rect.bottom - S(66), S(140), S(44))
-        pygame.draw.rect(screen, (24, 28, 54), back_rect, border_radius=S(5))
-        pygame.draw.rect(screen, PINK, back_rect, 1, border_radius=S(5))
-        back_txt = text_surf(fonts["sm"], "< BACK", PINK)
-        screen.blit(back_txt, (back_rect.centerx - back_txt.get_width() // 2, back_rect.centery - back_txt.get_height() // 2))
-
-        name_surf = text_surf(fonts["load_line"], str(ssid), TEXT)
-        name_max_w = rect.w - S(40)
-        if name_surf.get_width() > name_max_w:
-            name_surf = name_surf.subsurface((0, 0, name_max_w, name_surf.get_height()))
-        screen.blit(name_surf, (rect.x + S(18), rect.y + S(64)))
-
-        stats_y = rect.y + S(118)
-        screen.blit(text_surf(fonts["sm"], "SIGNAL", MUTED), (rect.x + S(18), stats_y))
-        screen.blit(text_surf(fonts["panel_title"], f"{int(dbm)} dBm", PINK if dbm >= -70 else CYAN), (rect.x + S(18), stats_y + S(24)))
-
-        screen.blit(text_surf(fonts["sm"], "QUALITY", MUTED), (rect.x + S(260), stats_y))
-        screen.blit(text_surf(fonts["panel_title"], f"{quality}%", CYAN), (rect.x + S(260), stats_y + S(24)))
-
-        deauth_rect = pygame.Rect(rect.right - S(210), rect.bottom - S(66), S(190), S(44))
-        pygame.draw.rect(screen, (52, 10, 24), deauth_rect, border_radius=S(6))
-        pygame.draw.rect(screen, PINK, deauth_rect, 2, border_radius=S(6))
-        deauth_txt = text_surf(fonts["sm"], "DEAUTH", PINK)
-        screen.blit(deauth_txt, (deauth_rect.centerx - deauth_txt.get_width() // 2, deauth_rect.centery - deauth_txt.get_height() // 2))
-
-        deauth_msg = data.get("wifi_deauth_msg", "")
-        deauth_at = float(data.get("wifi_deauth_at", 0.0))
-        if deauth_msg and (now - deauth_at) <= 3.0:
-            screen.blit(text_surf(fonts["sm"], deauth_msg, MUTED), (rect.x + S(18), rect.bottom - S(52)))
+        render_wifi_detail(
+            screen,
+            rect,
+            fonts,
+            selected_entry,
+            now,
+            text_surf=text_surf,
+            S=S,
+            colors={"PINK": PINK, "CYAN": CYAN, "MUTED": MUTED, "TEXT": TEXT},
+        )
         return
 
     row_h = S(56)

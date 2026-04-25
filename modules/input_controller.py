@@ -3,6 +3,7 @@ import time
 import pygame
 
 from modules.draw import S
+from modules.panels.panel_wifi_deauth import begin_deauth, stop_deauth
 from modules.panels.panel_wifi import wifi_click_action
 from modules.sound_manager import play_click
 
@@ -76,7 +77,12 @@ def handle_input(selected, current_view, light_on, click_sound, ripples, data=No
                         data["wifi_selected_ssid"] = None
                     elif action == "deauth":
                         ssid = str(payload)
-                        data["wifi_deauth_msg"] = f"DEAUTH sent to {ssid}"
+                        started = begin_deauth("sim-ap", ssid, "wlan0")
+                        data["wifi_deauth_msg"] = f"DEAUTH sim started for {ssid}" if started else "DEAUTH simulation already running"
+                        data["wifi_deauth_at"] = time.time()
+                    elif action == "stop_deauth":
+                        stopped = stop_deauth()
+                        data["wifi_deauth_msg"] = "DEAUTH simulation stopped" if stopped else "DEAUTH simulation already stopped"
                         data["wifi_deauth_at"] = time.time()
 
     return running, selected, current_view, light_on
