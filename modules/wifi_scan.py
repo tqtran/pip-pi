@@ -3,18 +3,42 @@ import subprocess
 import time
 
 
-def run_command_lines(cmd, timeout=2):
+def run_command_lines(cmd, timeout=2, stop_event=None):
+    proc = None
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        if result.returncode != 0 and result.stderr:
-            print(f"[cmd] {cmd[0]} stderr: {result.stderr.strip()[:120]}")
-        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        deadline = time.time() + max(0.1, float(timeout))
+
+        while proc.poll() is None:
+            if stop_event is not None and stop_event.is_set():
+                proc.terminate()
+                try:
+                    proc.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                return []
+            if time.time() >= deadline:
+                proc.kill()
+                print(f"[cmd] {cmd[0]} timed out after {timeout}s")
+                return []
+            time.sleep(0.05)
+
+        stdout, stderr = proc.communicate(timeout=0.2)
+        if proc.returncode != 0 and stderr:
+            print(f"[cmd] {cmd[0]} stderr: {stderr.strip()[:120]}")
+        return [line.strip() for line in stdout.splitlines() if line.strip()]
     except subprocess.TimeoutExpired:
         print(f"[cmd] {cmd[0]} timed out after {timeout}s")
         return []
     except Exception as exc:
         print(f"[cmd] {cmd[0]} failed: {exc}")
         return []
+    finally:
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
 
 
 def _wifi_interface():
@@ -73,10 +97,10 @@ def _parse_security(block_lines):
     return "Open"
 
 
-def read_wifi_networks():
+def read_wifi_networks(stop_event=None):
     """Return list of (ssid, signal_dbm, security) tuples, best signal per unique SSID."""
     iface = _wifi_interface()
-    lines = run_command_lines(["iw", "dev", iface, "scan", "dump"], timeout=5)
+    lines = run_command_lines(["iw", "dev", iface, "scan", "dump"], timeout=5, stop_event=stop_event)
     if not lines:
         print(f"[scan] wifi: iw scan dump returned no output (iface={iface})")
         return []
@@ -118,7 +142,11 @@ def read_wifi_networks():
     )
 
 
-def bg_scan_wifi(data, cache):
+def bg_scan_wifi(data, cache, stop_event=None):
+    if stop_event is not None and stop_event.is_set():
+        cache["wifi_scanning"] = False
+        return
+
     if shutil.which("iw") is None:
         if not cache.get("wifi_unavailable", False):
             print("[scan] wifi: iw not found")
@@ -129,7 +157,10 @@ def bg_scan_wifi(data, cache):
         return
 
     t0 = time.time()
-    result = read_wifi_networks()
+    result = read_wifi_networks(stop_event=stop_event)
+    if stop_event is not None and stop_event.is_set():
+        cache["wifi_scanning"] = False
+        return
     print(f"[scan] wifi: {len(result)} ({time.time() - t0:.1f}s)")
     data["wifi_networks"] = result
     data["wifi"] = len(result)

@@ -2,10 +2,13 @@ import time
 
 import pygame
 
+from modules.app_config import CONFIG, write_config_file
 from modules.draw import S
+from modules.panels.panel_config import config_click_action
 from modules.panels.panel_wifi_deauth import begin_deauth, stop_deauth
 from modules.panels.panel_wifi import wifi_click_action
 from modules.sound_manager import play_click
+from modules.thread_control import request_shutdown
 
 
 def _apply_menu_selection(mx, my, selected, current_view, light_on):
@@ -53,9 +56,17 @@ def handle_input(selected, current_view, light_on, click_sound, ripples, data=No
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
+            request_shutdown()
+            stop_deauth()
+            if data is not None:
+                data["wifi_deauth_screen"] = False
             running = False
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
+                request_shutdown()
+                stop_deauth()
+                if data is not None:
+                    data["wifi_deauth_screen"] = False
                 running = False
             elif event.key == pygame.K_DOWN:
                 selected = (selected + 1) % 5
@@ -65,7 +76,37 @@ def handle_input(selected, current_view, light_on, click_sound, ripples, data=No
             mx, my = event.pos
             ripples.append({"x": mx, "y": my, "born": time.time()})
             play_click(click_sound)
+            old_view = current_view
+            was_deauth_screen = bool(data.get("wifi_deauth_screen", False)) if data is not None else False
             selected, current_view, light_on, menu_handled = _apply_menu_selection(mx, my, selected, current_view, light_on)
+
+            # If navigation leaves wifi while deauth screen is open, stop the worker.
+            if menu_handled and data is not None and old_view == "wifi" and current_view != "wifi" and was_deauth_screen:
+                stop_deauth()
+                data["wifi_deauth_screen"] = False
+
+            # Reset config draft whenever the user freshly enters config
+            if current_view == "config" and old_view != "config" and data is not None:
+                data["config_draft"] = None
+
+            if not menu_handled and data is not None and current_view == "config":
+                rect = _content_rect()
+                if rect is not None and rect.collidepoint(mx, my):
+                    action, _ = config_click_action(mx, my, rect, data, CONFIG, S)
+                    if action == "save":
+                        draft = data.get("config_draft")
+                        if draft:
+                            for section, vals in draft.items():
+                                if section in CONFIG and isinstance(vals, dict):
+                                    CONFIG[section].update(vals)
+                            write_config_file(CONFIG)
+                        data["config_draft"] = None
+                        current_view = "home"
+                        selected = 2
+                    elif action == "cancel":
+                        data["config_draft"] = None
+                        current_view = "home"
+                        selected = 2
 
             if not menu_handled and data is not None and current_view == "wifi":
                 rect = _content_rect()
@@ -76,6 +117,7 @@ def handle_input(selected, current_view, light_on, click_sound, ripples, data=No
                         data["wifi_deauth_screen"] = False
                     elif action == "back":
                         if data.get("wifi_deauth_screen", False):
+                            stop_deauth()
                             data["wifi_deauth_screen"] = False
                         else:
                             data["wifi_selected_ssid"] = None

@@ -3,11 +3,19 @@ import time
 
 from modules.app_config import DEFAULT_CONFIG
 from modules.ble_scan import bg_scan_ble
+from modules.thread_control import get_shutdown_event, is_shutting_down, start_managed_thread
 from modules.system_metrics import read_cpu_percent, read_mem_percent, read_storage_percent, read_temp_c, read_uptime_str
 from modules.wifi_scan import bg_scan_wifi
 
 
 def update_data(data, cache, start_time, now, config):
+    if is_shutting_down():
+        cache["wifi_scanning"] = False
+        cache["ble_scanning"] = False
+        data["wifi_scanning"] = False
+        data["ble_scanning"] = False
+        return
+
     intervals = config.get("refresh_intervals", {})
     scan_intervals = config.get("scan_intervals", {})
     scan_behavior = config.get("scan_behavior", {})
@@ -63,7 +71,14 @@ def update_data(data, cache, start_time, now, config):
             cache["wifi_scanning"] = True
             cache["wifi_scan_started"] = now
             cache["wifi_refresh_at"] = now
-            threading.Thread(target=bg_scan_wifi, args=(data, cache), daemon=True).start()
+            worker = start_managed_thread(
+                "wifi-scan",
+                bg_scan_wifi,
+                args=(data, cache, get_shutdown_event()),
+                daemon=True,
+            )
+            if worker is None:
+                cache["wifi_scanning"] = False
 
     if (allow_ble_scan
             and now - cache.get("ble_refresh_at", -ble_seconds) >= ble_seconds):
@@ -74,7 +89,14 @@ def update_data(data, cache, start_time, now, config):
             cache["ble_scan_started"] = now
             cache["ble_refresh_at"] = now
             cache["ble_scan_count"] = ble_scan_count + 1
-            threading.Thread(target=bg_scan_ble, args=(data, cache, ble_window), daemon=True).start()
+            worker = start_managed_thread(
+                "ble-scan",
+                bg_scan_ble,
+                args=(data, cache, ble_window, get_shutdown_event()),
+                daemon=True,
+            )
+            if worker is None:
+                cache["ble_scanning"] = False
 
     data["wifi_scanning"] = cache.get("wifi_scanning", False)
     data["ble_scanning"] = cache.get("ble_scanning", False)

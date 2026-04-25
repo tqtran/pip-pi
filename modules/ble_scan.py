@@ -7,6 +7,8 @@ import subprocess
 import threading
 import time
 
+from modules.thread_control import start_managed_thread
+
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(MODULE_DIR)
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
@@ -103,8 +105,12 @@ def read_ble_devices():
     return sorted(devices, key=lambda x: x[0].lower())
 
 
-def bg_scan_ble(data, cache, scan_window_seconds):
+def bg_scan_ble(data, cache, scan_window_seconds, stop_event=None):
     t0 = time.time()
+    if stop_event is not None and stop_event.is_set():
+        cache["ble_scanning"] = False
+        return
+
     if shutil.which("bluetoothctl") is None:
         print("[scan] ble: bluetoothctl not found")
         cache["ble_scanning"] = False
@@ -113,6 +119,8 @@ def bg_scan_ble(data, cache, scan_window_seconds):
     names = {}
     rssis = {}
     proc = None
+    feeder_stop = threading.Event()
+    feeder_thread = None
     try:
         proc = subprocess.Popen(
             ["bluetoothctl", "scan", "on"],
@@ -127,14 +135,16 @@ def bg_scan_ble(data, cache, scan_window_seconds):
         def _feeder(stream, q):
             try:
                 for ln in stream:
+                    if feeder_stop.is_set():
+                        break
                     q.put(ln)
             except Exception:
                 pass
 
-        threading.Thread(target=_feeder, args=(proc.stdout, line_q), daemon=True).start()
+        feeder_thread = start_managed_thread("ble-feeder", _feeder, args=(proc.stdout, line_q), daemon=True)
 
         deadline = time.time() + max(1.0, float(scan_window_seconds))
-        while time.time() < deadline:
+        while time.time() < deadline and (stop_event is None or not stop_event.is_set()):
             try:
                 line = line_q.get(timeout=0.25)
             except queue.Empty:
@@ -163,6 +173,7 @@ def bg_scan_ble(data, cache, scan_window_seconds):
                     elif ":" not in rest:
                         names[mac] = rest
     finally:
+        feeder_stop.set()
         if proc is not None:
             proc.terminate()
             try:
@@ -170,7 +181,14 @@ def bg_scan_ble(data, cache, scan_window_seconds):
             except subprocess.TimeoutExpired:
                 proc.kill()
 
+        if feeder_thread is not None and feeder_thread.is_alive():
+            feeder_thread.join(timeout=1.0)
+
         subprocess.run(["bluetoothctl", "scan", "off"], timeout=3, capture_output=True)
+
+        if stop_event is not None and stop_event.is_set():
+            cache["ble_scanning"] = False
+            return
 
         static = read_ble_devices()
         seen = set(names.keys()) | set(rssis.keys())

@@ -26,6 +26,8 @@ from modules.draw import BASE_H, BASE_W, RIPPLE_LIFE, TEXT, configure_layout, dr
 from modules.input_controller import handle_input
 from modules.runtime_updater import update_data
 from modules.sound_manager import init_click_sound
+from modules.panels.panel_wifi_deauth import stop_deauth
+from modules.thread_control import request_shutdown, stop_all_background_threads
 
 FPS = 30
 
@@ -52,82 +54,93 @@ def init_pygame_or_die():
 
 
 def main():
-    init_pygame_or_die()
+    try:
+        init_pygame_or_die()
 
-    info = pygame.display.Info()
-    width = info.current_w
-    height = info.current_h
-    scale = min(width / BASE_W, height / BASE_H)
-    configure_layout(width, height, scale)
-    print(f"[startup] display: {width}x{height}  scale: {scale:.3f}")
+        info = pygame.display.Info()
+        width = info.current_w
+        height = info.current_h
+        scale = min(width / BASE_W, height / BASE_H)
+        configure_layout(width, height, scale)
+        print(f"[startup] display: {width}x{height}  scale: {scale:.3f}")
 
-    pygame.display.set_caption("pip-pi live intel")
-    pygame.mouse.set_visible(False)
+        pygame.display.set_caption("pip-pi live intel")
+        pygame.mouse.set_visible(False)
 
-    flags = pygame.FULLSCREEN if "--fullscreen" in set(sys.argv[1:]) else 0
-    screen = pygame.display.set_mode((width, height), flags)
-    clock = pygame.time.Clock()
+        flags = pygame.FULLSCREEN if "--fullscreen" in set(sys.argv[1:]) else 0
+        screen = pygame.display.set_mode((width, height), flags)
+        clock = pygame.time.Clock()
 
-    fonts = make_fonts()
-    click_sound = init_click_sound()
-    selected = 2
-    current_view = "home"
-    light_on = False
-    start = time.time()
-    data = {
-        "wifi": 0,
-        "ble": 0,
-        "cpu": 0,
-        "mem": 0,
-        "store": 0,
-        "temp": 0,
-        "clock": "00:00",
-        "last_update": "--:--:--",
-        "uptime": "0:00:00",
-        "wifi_scanning": False,
-        "ble_scanning": False,
-        "wifi_networks": [],
-        "ble_devices": [],
-        "wifi_selected_ssid": None,
-        "wifi_deauth_screen": False,
-        "wifi_deauth_msg": "",
-        "wifi_deauth_at": 0.0,
-        "current_view": "home",
-    }
+        fonts = make_fonts()
+        click_sound = init_click_sound()
+        selected = 2
+        current_view = "home"
+        light_on = False
+        start = time.time()
+        data = {
+            "wifi": 0,
+            "ble": 0,
+            "cpu": 0,
+            "mem": 0,
+            "store": 0,
+            "temp": 0,
+            "clock": "00:00",
+            "last_update": "--:--:--",
+            "uptime": "0:00:00",
+            "wifi_scanning": False,
+            "ble_scanning": False,
+            "wifi_networks": [],
+            "ble_devices": [],
+            "wifi_selected_ssid": None,
+            "wifi_deauth_screen": False,
+            "wifi_deauth_msg": "",
+            "wifi_deauth_at": 0.0,
+            "current_view": "home",
+            "config_draft": None,
+        }
 
-    _scan_intervals = CONFIG.get("scan_intervals", {})
-    _scan_behavior = CONFIG.get("scan_behavior", {})
-    _wifi_secs = float(_scan_intervals.get("wifi_seconds", DEFAULT_CONFIG["scan_intervals"]["wifi_seconds"]))
-    _ble_secs = float(_scan_intervals.get("ble_seconds", DEFAULT_CONFIG["scan_intervals"]["ble_seconds"]))
-    _ble_stagger = float(_scan_behavior.get("ble_stagger_seconds", DEFAULT_CONFIG["scan_behavior"]["ble_stagger_seconds"]))
-    _now = time.time()
-    cache = {
-        "wifi_refresh_at": _now - _wifi_secs,
-        "ble_refresh_at": _now - _ble_secs + _ble_stagger,
-    }
-    ripples = []
+        _scan_intervals = CONFIG.get("scan_intervals", {})
+        _scan_behavior = CONFIG.get("scan_behavior", {})
+        _wifi_secs = float(_scan_intervals.get("wifi_seconds", DEFAULT_CONFIG["scan_intervals"]["wifi_seconds"]))
+        _ble_secs = float(_scan_intervals.get("ble_seconds", DEFAULT_CONFIG["scan_intervals"]["ble_seconds"]))
+        _ble_stagger = float(_scan_behavior.get("ble_stagger_seconds", DEFAULT_CONFIG["scan_behavior"]["ble_stagger_seconds"]))
+        _now = time.time()
+        cache = {
+            "wifi_refresh_at": _now - _wifi_secs,
+            "ble_refresh_at": _now - _ble_secs + _ble_stagger,
+        }
+        ripples = []
 
-    running = True
-    while running:
-        running, selected, current_view, light_on = handle_input(
-            selected=selected,
-            current_view=current_view,
-            light_on=light_on,
-            click_sound=click_sound,
-            ripples=ripples,
-            data=data,
-        )
+        running = True
+        while running:
+            running, selected, current_view, light_on = handle_input(
+                selected=selected,
+                current_view=current_view,
+                light_on=light_on,
+                click_sound=click_sound,
+                ripples=ripples,
+                data=data,
+            )
 
-        now = time.time()
-        data["current_view"] = current_view
-        update_data(data, cache, start, now, CONFIG)
-        draw_frame(screen, fonts, data, selected, current_view, light_on, now, CONFIG, ripples)
+            if not running:
+                break
 
-        ripples = [rp for rp in ripples if (now - rp["born"]) < RIPPLE_LIFE]
-        pygame.display.flip()
-        clock.tick(FPS)
+            now = time.time()
+            data["current_view"] = current_view
+            update_data(data, cache, start, now, CONFIG)
+            draw_frame(screen, fonts, data, selected, current_view, light_on, now, CONFIG, ripples)
 
-    pygame.quit()
+            ripples = [rp for rp in ripples if (now - rp["born"]) < RIPPLE_LIFE]
+            pygame.display.flip()
+            clock.tick(FPS)
+    finally:
+        request_shutdown()
+        stop_deauth()
+        lingering = stop_all_background_threads(timeout_per_thread=3.0)
+        if lingering:
+            print(f"[shutdown] lingering threads: {', '.join(lingering)}")
+        pygame.quit()
+
     sys.exit(0)
 
 

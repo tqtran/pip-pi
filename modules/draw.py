@@ -2,6 +2,7 @@ import math
 
 import pygame
 from modules.panels.panel_bluetooth import panel_bluetooth
+from modules.panels.panel_config import panel_config
 from modules.panels.panel_cpu_mem import panel_cpu_mem
 from modules.panels.panel_home import panel_home
 from modules.panels.panel_wifi import panel_wifi
@@ -322,6 +323,19 @@ def draw_main(screen, fonts, data, selected, current_view, light_on, now, config
                 draw_signal_list_rows=draw_signal_list_rows,
                 S=S,
                 colors={"CYAN": CYAN, "PINK": PINK, "BG": BG, "MUTED": MUTED},
+            )
+        elif current_view == "config":
+            panel_config(
+                screen,
+                content_rect,
+                fonts,
+                data,
+                now,
+                config,
+                neon_box=neon_box,
+                text_surf=text_surf,
+                S=S,
+                colors={"PINK": PINK, "CYAN": CYAN, "MUTED": MUTED, "TEXT": TEXT},
             )
         else:
             draw_placeholder_view(screen, content_rect, fonts, current_view.upper(), now, VIOLET)

