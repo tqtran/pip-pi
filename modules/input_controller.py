@@ -73,11 +73,17 @@ def handle_input(selected, current_view, light_on, click_sound, ripples, data=No
                     action, payload = wifi_click_action(mx, my, rect, data, S)
                     if action == "select":
                         data["wifi_selected_ssid"] = str(payload)
+                        data["wifi_deauth_screen"] = False
                     elif action == "back":
-                        data["wifi_selected_ssid"] = None
+                        if data.get("wifi_deauth_screen", False):
+                            data["wifi_deauth_screen"] = False
+                        else:
+                            data["wifi_selected_ssid"] = None
+                            data["wifi_deauth_screen"] = False
                     elif action == "deauth":
                         ssid = str(payload)
                         started = begin_deauth("sim-ap", ssid, "wlan0")
+                        data["wifi_deauth_screen"] = True
                         data["wifi_deauth_msg"] = f"DEAUTH sim started for {ssid}" if started else "DEAUTH simulation already running"
                         data["wifi_deauth_at"] = time.time()
                     elif action == "stop_deauth":

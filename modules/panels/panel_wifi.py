@@ -15,7 +15,8 @@ def wifi_click_action(mx, my, rect, data, S):
     selected_present = selected_ssid is not None and any(str(n[0]) == str(selected_ssid) for n in networks)
 
     if selected_present:
-        return wifi_detail_click_action(mx, my, rect, selected_ssid, S)
+        deauth_screen = bool(data.get("wifi_deauth_screen", False))
+        return wifi_detail_click_action(mx, my, rect, selected_ssid, S, deauth_screen=deauth_screen)
 
     row_h = S(56)
     row_top = rect.y + S(48)
@@ -70,6 +71,7 @@ def panel_wifi(screen, rect, fonts, data, now, *, neon_box, draw_scanline_shimme
         return
 
     if selected_entry is not None:
+        deauth_screen = bool(data.get("wifi_deauth_screen", False))
         render_wifi_detail(
             screen,
             rect,
@@ -78,6 +80,7 @@ def panel_wifi(screen, rect, fonts, data, now, *, neon_box, draw_scanline_shimme
             now,
             text_surf=text_surf,
             S=S,
+            deauth_screen=deauth_screen,
             colors={"PINK": PINK, "CYAN": CYAN, "MUTED": MUTED, "TEXT": TEXT},
         )
         return
