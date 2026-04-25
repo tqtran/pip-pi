@@ -36,6 +36,8 @@ def begin_deauth(ap_mac, target_mac, interface):
 
     def _worker():
         try:
+            
+            _push_status(f"No EVIL TWIN detected (deauth only)")
             _push_status(f"ap={ap_mac}")
             _push_status(f"target={target_mac}")
             _push_status(f"iface={interface}")
