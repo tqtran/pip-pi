@@ -36,34 +36,29 @@ def render_wifi_detail(screen, rect, fonts, selected_entry, now, *, text_surf, S
     ssid, dbm = selected_entry
 
     if deauth_screen:
-        back_rect = pygame.Rect(rect.x + S(18), rect.bottom - S(66), S(140), S(44))
-        pygame.draw.rect(screen, (24, 28, 54), back_rect, border_radius=S(5))
-        pygame.draw.rect(screen, PINK, back_rect, 1, border_radius=S(5))
-        back_txt = text_surf(fonts["sm"], "< BACK", PINK)
-        screen.blit(back_txt, (back_rect.centerx - back_txt.get_width() // 2, back_rect.centery - back_txt.get_height() // 2))
+        btn_y = rect.bottom - S(66)
+        back_rect = pygame.Rect(rect.x + S(18), btn_y, S(140), S(44))
+        stop_rect = pygame.Rect(rect.right - S(210), btn_y, S(190), S(44))
 
-        title = text_surf(fonts["panel_title"], "DEAUTH STATUS", PINK)
-        screen.blit(title, (rect.x + S(18), rect.y + S(20)))
-
-        target_label = text_surf(fonts["sm"], "TARGET", MUTED)
-        screen.blit(target_label, (rect.x + S(18), rect.y + S(70)))
-        target_surf = text_surf(fonts["load_line"], str(ssid), TEXT)
-        target_max_w = rect.w - S(40)
-        if target_surf.get_width() > target_max_w:
-            target_surf = target_surf.subsurface((0, 0, target_max_w, target_surf.get_height()))
-        screen.blit(target_surf, (rect.x + S(18), rect.y + S(98)))
-
-        status_panel = pygame.Rect(rect.x + S(18), rect.y + S(160), rect.w - S(36), rect.h - S(252))
+        # Status panel fills full space above buttons
+        panel_top = rect.y + S(8)
+        panel_bottom = btn_y - S(8)
+        status_panel = pygame.Rect(rect.x + S(8), panel_top, rect.w - S(16), panel_bottom - panel_top)
         pygame.draw.rect(screen, (12, 16, 34), status_panel, border_radius=S(6))
         pygame.draw.rect(screen, CYAN, status_panel, 1, border_radius=S(6))
-        status_head = text_surf(fonts["sm"], "STATUS", CYAN)
-        screen.blit(status_head, (status_panel.x + S(10), status_panel.y + S(8)))
+
+        # SSID as panel label
+        ssid_surf = text_surf(fonts["sm"], str(ssid), CYAN)
+        ssid_max_w = status_panel.w - S(16)
+        if ssid_surf.get_width() > ssid_max_w:
+            ssid_surf = ssid_surf.subsurface((0, 0, ssid_max_w, ssid_surf.get_height()))
+        screen.blit(ssid_surf, (status_panel.x + S(8), status_panel.y + S(6)))
 
         status_rect = pygame.Rect(
-            status_panel.x + S(10),
-            status_panel.y + S(34),
-            status_panel.w - S(20),
-            status_panel.h - S(44),
+            status_panel.x + S(8),
+            status_panel.y + ssid_surf.get_height() + S(10),
+            status_panel.w - S(16),
+            status_panel.h - ssid_surf.get_height() - S(16),
         )
         render_status(
             screen,
@@ -71,10 +66,15 @@ def render_wifi_detail(screen, rect, fonts, selected_entry, now, *, text_surf, S
             fonts,
             now,
             text_surf=text_surf,
+            S=S,
             color=MUTED,
         )
 
-        stop_rect = pygame.Rect(rect.right - S(210), rect.bottom - S(66), S(190), S(44))
+        pygame.draw.rect(screen, (24, 28, 54), back_rect, border_radius=S(5))
+        pygame.draw.rect(screen, PINK, back_rect, 1, border_radius=S(5))
+        back_txt = text_surf(fonts["sm"], "< BACK", PINK)
+        screen.blit(back_txt, (back_rect.centerx - back_txt.get_width() // 2, back_rect.centery - back_txt.get_height() // 2))
+
         pygame.draw.rect(screen, (14, 24, 44), stop_rect, border_radius=S(6))
         pygame.draw.rect(screen, CYAN, stop_rect, 2, border_radius=S(6))
         stop_txt = text_surf(fonts["sm"], "STOP", CYAN)

@@ -66,33 +66,28 @@ def stop_deauth():
     return True
 
 
-def render_status(screen, rect, fonts, now, *, text_surf, color):
-    """Render latest deauth status as scrolling marquee text inside rect."""
+def render_status(screen, rect, fonts, now, *, text_surf, S, color):
+    """Render deauth status lines scrolling upward, newest at bottom."""
     with _STATUS_LOCK:
         lines = list(_STATUS_LINES)
 
     if not lines:
-        status_text = "deauth simulation idle"
-    else:
-        status_text = " | ".join(lines[-8:])
-
-    surf = text_surf(fonts["sm"], status_text, color)
+        lines = ["deauth simulation idle"]
 
     prev_clip = screen.get_clip()
     screen.set_clip(rect)
 
-    if surf.get_width() <= rect.w:
-        x = rect.x + 4
-        y = rect.y + (rect.h - surf.get_height()) // 2
-        screen.blit(surf, (x, y))
-    else:
-        speed_px_s = 70.0
-        gap = 80
-        cycle = surf.get_width() + gap
-        offset = int((now * speed_px_s) % cycle)
-        x1 = rect.x + 4 - offset
-        y = rect.y + (rect.h - surf.get_height()) // 2
-        screen.blit(surf, (x1, y))
-        screen.blit(surf, (x1 + cycle, y))
+    line_h = fonts["sm"].get_height() + 2
+    max_visible = max(1, rect.h // line_h)
+    visible = lines[-max_visible:]
+
+    # Pin newest line to bottom, older lines above
+    for i, line in enumerate(reversed(visible)):
+        y = rect.bottom - (i + 1) * line_h
+        if y < rect.y:
+            break
+        surf = text_surf(fonts["sm"], line, color)
+        clipped_w = min(surf.get_width(), rect.w - S(4))
+        screen.blit(surf.subsurface((0, 0, clipped_w, surf.get_height())), (rect.x + S(4), y))
 
     screen.set_clip(prev_clip)
