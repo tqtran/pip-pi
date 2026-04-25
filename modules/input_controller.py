@@ -71,15 +71,12 @@ def handle_input(selected, current_view, light_on, click_sound, ripples, data=No
                 if rect is not None and rect.collidepoint(mx, my):
                     action, payload = wifi_click_action(mx, my, rect, data, S)
                     if action == "select":
-                        data["wifi_selected_idx"] = payload
+                        data["wifi_selected_ssid"] = str(payload)
                     elif action == "back":
-                        data["wifi_selected_idx"] = None
+                        data["wifi_selected_ssid"] = None
                     elif action == "deauth":
-                        idx = int(payload)
-                        nets = data.get("wifi_networks", [])
-                        if 0 <= idx < len(nets):
-                            ssid = str(nets[idx][0])
-                            data["wifi_deauth_msg"] = f"DEAUTH sent to {ssid}"
-                            data["wifi_deauth_at"] = time.time()
+                        ssid = str(payload)
+                        data["wifi_deauth_msg"] = f"DEAUTH sent to {ssid}"
+                        data["wifi_deauth_at"] = time.time()
 
     return running, selected, current_view, light_on

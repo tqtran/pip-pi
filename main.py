@@ -77,7 +77,7 @@ def main():
         "ble_scanning": False,
         "wifi_networks": [],
         "ble_devices": [],
-        "wifi_selected_idx": None,
+        "wifi_selected_ssid": None,
         "wifi_deauth_msg": "",
         "wifi_deauth_at": 0.0,
     }

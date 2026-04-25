@@ -9,15 +9,16 @@ def _signal_quality(dbm):
 
 def wifi_click_action(mx, my, rect, data, S):
     networks = data.get("wifi_networks", [])
-    selected_idx = data.get("wifi_selected_idx")
+    selected_ssid = data.get("wifi_selected_ssid")
+    selected_present = selected_ssid is not None and any(str(n[0]) == str(selected_ssid) for n in networks)
 
-    if selected_idx is not None and 0 <= selected_idx < len(networks):
-        back_rect = pygame.Rect(rect.x + S(18), rect.y + S(12), S(120), S(34))
+    if selected_present:
+        back_rect = pygame.Rect(rect.x + S(18), rect.bottom - S(66), S(140), S(44))
         deauth_rect = pygame.Rect(rect.right - S(210), rect.bottom - S(66), S(190), S(44))
         if back_rect.collidepoint(mx, my):
             return "back", None
         if deauth_rect.collidepoint(mx, my):
-            return "deauth", selected_idx
+            return "deauth", str(selected_ssid)
         return None, None
 
     row_h = S(56)
@@ -28,7 +29,7 @@ def wifi_click_action(mx, my, rect, data, S):
     for idx in range(visible_count):
         rr = pygame.Rect(rect.x + S(10), row_top + idx * row_h, rect.w - S(20), row_h)
         if rr.collidepoint(mx, my):
-            return "select", idx
+            return "select", str(networks[idx][0])
 
     return None, None
 
@@ -46,34 +47,41 @@ def panel_wifi(screen, rect, fonts, data, now, *, neon_box, draw_scanline_shimme
     neon_box(screen, rect, PINK, pulse=now + 0.2)
     draw_scanline_shimmer(screen, rect, now)
 
-    selected_idx = data.get("wifi_selected_idx")
-    if selected_idx is not None and not (0 <= selected_idx < len(networks)):
-        selected_idx = None
-        data["wifi_selected_idx"] = None
+    selected_ssid = data.get("wifi_selected_ssid")
+    selected_entry = None
+    if selected_ssid is not None:
+        for entry in networks:
+            if str(entry[0]) == str(selected_ssid):
+                selected_entry = entry
+                break
+        if selected_entry is None:
+            data["wifi_selected_ssid"] = None
 
-    title = f"WIFI ({len(networks)} found)"
-    title_color = PINK
-    screen.blit(text_surf(fonts["panel_title"], title, title_color), (rect.x + S(18), rect.y + S(12)))
+    if selected_entry is None:
+        title = f"WIFI ({len(networks)} found)"
+        title_color = PINK
+        screen.blit(text_surf(fonts["panel_title"], title, title_color), (rect.x + S(18), rect.y + S(12)))
 
-    if scanning:
-        scan_text = "SCANNING" if int(now * 4) % 2 == 0 else "..."
-        scan_color = BG if int(now * 4) % 2 == 0 else PINK
-        scan_surf = text_surf(fonts["sm"], scan_text, scan_color)
-        screen.blit(scan_surf, (rect.right - S(18) - scan_surf.get_width(), rect.y + S(16)))
+        if scanning:
+            scan_text = "SCANNING" if int(now * 4) % 2 == 0 else "..."
+            scan_color = BG if int(now * 4) % 2 == 0 else PINK
+            scan_surf = text_surf(fonts["sm"], scan_text, scan_color)
+            screen.blit(scan_surf, (rect.right - S(18) - scan_surf.get_width(), rect.y + S(16)))
 
     if not networks:
         msg = "● SCANNING..." if scanning else "NO NETWORKS FOUND"
         screen.blit(text_surf(fonts["sm"], msg, MUTED), (rect.x + S(18), rect.y + S(56)))
         return
 
-    if selected_idx is not None:
-        ssid, dbm = networks[selected_idx]
+    if selected_entry is not None:
+        ssid, dbm = selected_entry
         quality = _signal_quality(dbm)
 
-        back_rect = pygame.Rect(rect.x + S(18), rect.y + S(12), S(120), S(34))
+        back_rect = pygame.Rect(rect.x + S(18), rect.bottom - S(66), S(140), S(44))
         pygame.draw.rect(screen, (24, 28, 54), back_rect, border_radius=S(5))
         pygame.draw.rect(screen, PINK, back_rect, 1, border_radius=S(5))
-        screen.blit(text_surf(fonts["sm"], "< BACK", PINK), (back_rect.x + S(10), back_rect.y + S(6)))
+        back_txt = text_surf(fonts["sm"], "< BACK", PINK)
+        screen.blit(back_txt, (back_rect.centerx - back_txt.get_width() // 2, back_rect.centery - back_txt.get_height() // 2))
 
         name_surf = text_surf(fonts["load_line"], str(ssid), TEXT)
         name_max_w = rect.w - S(40)
