@@ -18,6 +18,19 @@ _ARROW_W = 28
 _ARROW_H = 18
 _BTN_H   = 44
 _BTN_W   = 140
+_TITLE_H  = 36   # vertical space the title row occupies
+
+
+def _action_rects(rect, S):
+    """Three buttons right-aligned on the title row."""
+    btn_h = S(28)
+    btn_y = rect.y + S(8)
+    btn_w = S(120)
+    gap   = S(8)
+    rst_rect = pygame.Rect(rect.right - S(14) - btn_w,          btn_y, btn_w, btn_h)
+    upd_rect = pygame.Rect(rst_rect.x  - gap  - btn_w,          btn_y, btn_w, btn_h)
+    fs_rect  = pygame.Rect(upd_rect.x  - gap  - btn_w,          btn_y, btn_w, btn_h)
+    return fs_rect, upd_rect, rst_rect
 
 
 def _ensure_draft(data, config):
@@ -37,7 +50,8 @@ def _set_val(draft, section, key, val, mn, mx):
 
 def _field_rects(rect, i, S):
     row_h = S(_ROW_H)
-    row_y = rect.y + S(44) + i * row_h
+    # fields start just below the title row
+    row_y = rect.y + S(_TITLE_H) + S(10) + i * row_h
     up_rect = pygame.Rect(rect.right - S(44), row_y + S(4),  S(_ARROW_W), S(_ARROW_H))
     dn_rect = pygame.Rect(rect.right - S(44), row_y + S(24), S(_ARROW_W), S(_ARROW_H))
     return row_y, up_rect, dn_rect
@@ -53,6 +67,14 @@ def _btn_rects(rect, S):
 def config_click_action(mx, my, rect, data, config, S):
     _ensure_draft(data, config)
     draft = data["config_draft"]
+
+    fs_rect, upd_rect, rst_rect = _action_rects(rect, S)
+    if fs_rect.collidepoint(mx, my):
+        return "toggle_fullscreen", None
+    if upd_rect.collidepoint(mx, my):
+        return "update", None
+    if rst_rect.collidepoint(mx, my):
+        return "restart", None
 
     cancel_rect, save_rect = _btn_rects(rect, S)
     if save_rect.collidepoint(mx, my):
@@ -84,6 +106,24 @@ def panel_config(screen, rect, fonts, data, now, config, *, neon_box, text_surf,
     neon_box(screen, rect, CYAN, pulse=now + 1.0)
 
     screen.blit(text_surf(fonts["panel_title"], "CONFIG", CYAN), (rect.x + S(18), rect.y + S(10)))
+
+    # --- action buttons (same row as title, right-justified) ---
+    VIOLET = (122, 56, 255)
+    fs_rect, upd_rect, rst_rect = _action_rects(rect, S)
+    for btn_rect, label, border in [
+        (fs_rect,  "FULLSCREEN", VIOLET),
+        (upd_rect, "UPDATE",     CYAN),
+        (rst_rect, "RESTART",    PINK),
+    ]:
+        pygame.draw.rect(screen, (10, 12, 28), btn_rect, border_radius=S(5))
+        pygame.draw.rect(screen, border, btn_rect, 1, border_radius=S(5))
+        lbl = text_surf(fonts["top"], label, border)
+        screen.blit(lbl, (btn_rect.centerx - lbl.get_width() // 2,
+                          btn_rect.centery - lbl.get_height() // 2))
+
+    # divider below title row
+    div_y = rect.y + S(_TITLE_H) + S(4)
+    pygame.draw.line(screen, (30, 40, 70), (rect.x + S(10), div_y), (rect.right - S(10), div_y), 1)
 
     row_h = S(_ROW_H)
     for i, (label, section, key, step, mn, mx_val) in enumerate(_FIELDS):

@@ -1,3 +1,6 @@
+import os
+import subprocess
+import sys
 import time
 
 import pygame
@@ -107,6 +110,29 @@ def handle_input(selected, current_view, light_on, click_sound, ripples, data=No
                         data["config_draft"] = None
                         current_view = "home"
                         selected = 2
+                    elif action == "toggle_fullscreen":
+                        pygame.display.toggle_fullscreen()
+                        is_fs = bool(pygame.display.get_surface().get_flags() & pygame.FULLSCREEN)
+                        if data is not None:
+                            data["status_msg"] = "Fullscreen ON" if is_fs else "Fullscreen OFF"
+                            data["status_msg_at"] = time.time()
+                    elif action == "update":
+                        subprocess.Popen(
+                            ["sudo", "git", "-C",
+                             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "pull"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        )
+                        if data is not None:
+                            data["status_msg"] = "Running git pull..."
+                            data["status_msg_at"] = time.time()
+                    elif action == "restart":
+                        if data is not None:
+                            data["status_msg"] = "Restarting..."
+                        pygame.display.flip()
+                        pygame.time.wait(600)
+                        pygame.quit()
+                        os.execv(sys.executable, [sys.executable] + sys.argv)
 
             if not menu_handled and data is not None and current_view == "wifi":
                 rect = _content_rect()

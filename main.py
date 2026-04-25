@@ -97,6 +97,8 @@ def main():
             "wifi_deauth_at": 0.0,
             "current_view": "home",
             "config_draft": None,
+            "status_msg": "",
+            "status_msg_at": 0.0,
         }
 
         _scan_intervals = CONFIG.get("scan_intervals", {})

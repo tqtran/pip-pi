@@ -264,10 +264,26 @@ def draw_main(screen, fonts, data, selected, current_view, light_on, now, config
 
     top = pygame.Rect(S(14), S(20), WIDTH - S(28), S(34))
     pygame.draw.line(screen, (20, 35, 60), (top.x, top.bottom), (top.right, top.bottom), 1)
-    if current_view != "home":
-        clock_text = text_surf(fonts["clock"], data["clock"], PINK)
-        clock_x = top.right - S(16) - clock_text.get_width()
-        screen.blit(clock_text, (clock_x, top.y + S(1)))
+
+    # --- status bar ---
+    clock_text = text_surf(fonts["clock"], data["clock"], PINK)
+    clock_w = clock_text.get_width() + S(10)
+    screen.blit(clock_text, (top.right - clock_w, top.y + (top.h - clock_text.get_height()) // 2))
+
+    status_msg = data.get("status_msg", "")
+    status_at  = data.get("status_msg_at", 0.0)
+    _STATUS_TTL = 6.0  # seconds before message fades
+    if status_msg:
+        age = now - status_at
+        if age < _STATUS_TTL:
+            alpha = int(255 * max(0.0, 1.0 - age / _STATUS_TTL))
+            msg_surf = fonts["tiny"].render(status_msg, True, CYAN)
+            msg_surf.set_alpha(alpha)
+            msg_x = top.x + S(6)
+            msg_y = top.y + (top.h - msg_surf.get_height()) // 2
+            screen.blit(msg_surf, (msg_x, msg_y))
+        else:
+            data["status_msg"] = ""
 
     left = pygame.Rect(S(14), S(54), S(170), HEIGHT - S(68))
     menu_items = ["WIFI", "BLUETOOTH", "HOME", "CONFIG", "LIGHT"]
