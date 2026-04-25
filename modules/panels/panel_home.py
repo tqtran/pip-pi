@@ -78,51 +78,42 @@ def panel_home(screen, rect, fonts, data, now, config, *, neon_box, draw_wire_gr
     right_max_w = max(20, right_clip.w - S(8))
     font_keys = ["home_stat_big", "home_stat", "panel_title", "menu", "sm"]
 
+    left_header_y = left_clip.y + S(4)
+    right_header_y = right_clip.y + S(4)
+
     if wifi_scanning:
         left_half = pygame.Rect(rect.x + 2, rect.y + 2, split_x - rect.x - 3, rect.h - 4)
         pygame.draw.rect(screen, PINK, left_half, border_radius=S(6))
-        scan_text = "WIFI SCANNING ..."
+        _blit_clipped(screen, text_surf(fonts["sm"], "WIFI", WHITE), (left_text_x, left_header_y), left_clip)
+        scan_text = "SCANNING ..."
         wifi_font = _fit_font(fonts, scan_text, left_max_w, font_keys)
         wifi_surf = text_surf(wifi_font, scan_text, WHITE)
-        wifi_y = left_clip.y + S(12)
+        wifi_y = left_clip.centery - wifi_surf.get_height() // 2
         _blit_clipped(screen, wifi_surf, (left_text_x, wifi_y), left_clip)
     else:
-        wifi_label = "WIFI"
+        _blit_clipped(screen, text_surf(fonts["sm"], "WIFI", PINK), (left_text_x, left_header_y), left_clip)
         wifi_value = str(int(data["wifi"]))
-        _draw_label_value(
-            screen,
-            fonts,
-            wifi_label,
-            wifi_value,
-            PINK,
-            left_text_x,
-            left_clip,
-            text_surf=text_surf,
-            y_center=left_clip.y + S(24),
-        )
+        wifi_font = _fit_font(fonts, wifi_value, left_max_w, ["home_stat_big", "home_stat", "panel_title", "menu", "sm"])
+        wifi_surf = text_surf(wifi_font, wifi_value, PINK)
+        wifi_y = left_clip.centery - wifi_surf.get_height() // 2
+        _blit_clipped(screen, wifi_surf, (left_text_x, wifi_y), left_clip)
 
     if ble_scanning:
         right_half = pygame.Rect(split_x + 1, rect.y + 2, rect.right - split_x - 3, rect.h - 4)
         pygame.draw.rect(screen, CYAN, right_half, border_radius=S(6))
-        scan_text = "BLE SCANNING ..."
+        _blit_clipped(screen, text_surf(fonts["sm"], "BLE", WHITE), (right_text_x, right_header_y), right_clip)
+        scan_text = "SCANNING ..."
         ble_font = _fit_font(fonts, scan_text, right_max_w, font_keys)
         ble_surf = text_surf(ble_font, scan_text, WHITE)
-        ble_y = right_clip.y + S(12)
+        ble_y = right_clip.centery - ble_surf.get_height() // 2
         _blit_clipped(screen, ble_surf, (right_text_x, ble_y), right_clip)
     else:
-        ble_label = "BLE"
+        _blit_clipped(screen, text_surf(fonts["sm"], "BLE", CYAN), (right_text_x, right_header_y), right_clip)
         ble_value = str(int(data["ble"]))
-        _draw_label_value(
-            screen,
-            fonts,
-            ble_label,
-            ble_value,
-            CYAN,
-            right_text_x,
-            right_clip,
-            text_surf=text_surf,
-            y_center=right_clip.y + S(24),
-        )
+        ble_font = _fit_font(fonts, ble_value, right_max_w, ["home_stat_big", "home_stat", "panel_title", "menu", "sm"])
+        ble_surf = text_surf(ble_font, ble_value, CYAN)
+        ble_y = right_clip.centery - ble_surf.get_height() // 2
+        _blit_clipped(screen, ble_surf, (right_text_x, ble_y), right_clip)
 
     bar_h = max(2, S(4))
     bar_y = rect.bottom - bar_h - S(3)
